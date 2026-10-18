@@ -22,6 +22,17 @@ impl LaunchOptions {
     }
 }
 
+/// Prefer `$APPIMAGE` (the persistent `.AppImage` path) over `current_exe()`:
+/// inside an AppImage the executable path points at the temporary squashfs mount
+/// (`/tmp/.mount_…/usr/bin/…`), which is gone once the process exits, so an
+/// autostart entry recorded with it never launches at login.
+fn registration_path(appimage: Option<&str>, executable: Option<&str>) -> Option<String> {
+    appimage
+        .filter(|path| !path.is_empty())
+        .or(executable)
+        .map(str::to_string)
+}
+
 pub trait StartupProvider {
     fn is_enabled(&self) -> Result<bool, String>;
     fn set_enabled(&mut self, enabled: bool) -> Result<(), String>;
@@ -40,8 +51,15 @@ impl SystemStartup {
     }
 
     fn for_name(name: &str, bundle_identifier: &str) -> Result<Self, String> {
-        let path = std::env::current_exe().map_err(|error| error.to_string())?;
-        let path = path.to_string_lossy();
+        let current_exe = std::env::current_exe()
+            .map_err(|error| error.to_string())?
+            .to_string_lossy()
+            .into_owned();
+        let path = registration_path(
+            std::env::var("APPIMAGE").ok().as_deref(),
+            Some(&current_exe),
+        )
+        .ok_or_else(|| "could not resolve the executable path".to_string())?;
         let mut builder = AutoLaunchBuilder::new();
         builder
             .set_app_name(name)
@@ -155,6 +173,26 @@ mod tests {
         assert!(!startup.is_enabled().unwrap());
         assert!(set_enabled(&mut startup, true).unwrap());
         assert!(!set_enabled(&mut startup, false).unwrap());
+    }
+
+    #[test]
+    fn appimage_path_wins_over_the_temporary_mount() {
+        assert_eq!(
+            registration_path(
+                Some("/home/me/Draugr-Time.AppImage"),
+                Some("/tmp/.mount_xx/usr/bin/draugr-time")
+            ),
+            Some("/home/me/Draugr-Time.AppImage".to_string())
+        );
+        assert_eq!(
+            registration_path(Some(""), Some("/tmp/.mount_xx/usr/bin/draugr-time")),
+            Some("/tmp/.mount_xx/usr/bin/draugr-time".to_string())
+        );
+        assert_eq!(
+            registration_path(None, Some("/usr/bin/draugr-time")),
+            Some("/usr/bin/draugr-time".to_string())
+        );
+        assert_eq!(registration_path(None, None), None);
     }
 
     #[test]

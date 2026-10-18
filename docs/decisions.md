@@ -801,3 +801,12 @@ highlight, theme and date; canvas also invalidates on size changes.
   the release binary) and uploads the installer as an extra artifact; the
   `release` job renames and attaches every installer next to the existing
   archives. No new secrets or signing: Windows and macOS outputs stay unsigned.
+
+## 2026-10-18 — AppImage login startup path
+
+- The Linux startup registration used `std::env::current_exe()`, which inside an
+  AppImage points into the temporary squashfs mount (`/tmp/.mount_…/usr/bin/…`)
+  that is removed when the process exits, so the XDG autostart entry never
+  launched at login. Startup now prefers the persistent `$APPIMAGE` path (set by
+  the AppImage runtime) and falls back to `current_exe()` otherwise, so the
+  autostart `Exec=` targets the `.AppImage` file itself.
