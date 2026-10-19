@@ -236,7 +236,15 @@ mod linux {
             if ready.send(Ok(())).is_err() {
                 return;
             }
-            while let Ok(command) = receiver.recv() {
+            while let Ok(mut command) = receiver.recv() {
+                // Apply only the newest queued state: if the panel stalled (e.g. it
+                // restarts after resume), replaying every queued Status is wasted work.
+                while !matches!(command, Command::Quit) {
+                    match receiver.try_recv() {
+                        Ok(next) => command = next,
+                        Err(_) => break,
+                    }
+                }
                 match command {
                     Command::Update(status, active, fixture) => {
                         backend.update(&status, active, fixture)
