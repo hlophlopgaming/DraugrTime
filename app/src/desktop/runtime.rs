@@ -341,6 +341,11 @@ impl Sampler {
     }
 }
 
+/// Delay after resume before trimming, so the post-wake burst has finished.
+const WAKE_RECLAIM_DELAY: Duration = Duration::from_secs(20);
+/// Background trim for a long-running tray process; malloc_trim is cheap at this rate.
+const RECLAIM_PERIOD: Duration = Duration::from_secs(30 * 60);
+
 fn spawn_worker(
     shared: Shared,
     fixture: bool,
@@ -364,6 +369,8 @@ fn spawn_worker(
         #[cfg(target_os = "macos")]
         let _ = fixture;
         let mut last_status = None;
+        let mut last_machine = String::from("awake");
+        let mut reclaim_at = Some(Instant::now() + RECLAIM_PERIOD);
         while !shared.control.lock().unwrap().shutdown {
             #[cfg(not(target_os = "macos"))]
             let tick_started = Instant::now();
@@ -394,6 +401,17 @@ fn spawn_worker(
                     computer.capabilities();
             }
             let status = shared.status();
+            if status.computer.machine == "awake" && last_machine != "awake" {
+                // Wake and the display reconfiguration that follows touch many
+                // threads at once; return their freed pages once things settle.
+                reclaim_at = Some(Instant::now() + WAKE_RECLAIM_DELAY);
+            }
+            last_machine.clone_from(&status.computer.machine);
+            if reclaim_at.is_some_and(|at| Instant::now() >= at) {
+                use super::memory::MemoryReclaimer;
+                super::memory::SystemReclaimer.reclaim();
+                reclaim_at = Some(Instant::now() + RECLAIM_PERIOD);
+            }
             let mut comparison = status.clone();
             comparison.updated_ts = 0;
             comparison.idle_seconds = None;

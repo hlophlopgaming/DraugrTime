@@ -2063,6 +2063,7 @@ fn panel(theme: &Theme) -> container::Style {
 }
 
 pub fn run() -> iced::Result {
+    memory::limit_arenas();
     let args: Vec<_> = std::env::args().collect();
     #[cfg(target_os = "linux")]
     let _tray_host = if args.iter().any(|arg| arg == "--lifecycle-test") {
