@@ -810,3 +810,17 @@ highlight, theme and date; canvas also invalidates on size changes.
   launched at login. Startup now prefers the persistent `$APPIMAGE` path (set by
   the AppImage runtime) and falls back to `current_exe()` otherwise, so the
   autostart `Exec=` targets the `.AppImage` file itself.
+
+## 2026-10-22 — Release profile and lighter tracker tick
+
+- **Release profile.** `[profile.release]` now uses `lto = "fat"`,
+  `codegen-units = 1` and `strip = true` for smaller shipped binaries and
+  cross-crate inlining, at the cost of longer release builds in CI.
+  `panic` stays `unwind`: the daemon turns a panicked API thread into an error
+  through `JoinHandle::join`, which `abort` would replace with a crash.
+- **Tracker tick.** The worker reads the sampling gate (asleep, locked, paused)
+  under the control lock instead of cloning the whole `Status`, keeps one status
+  copy per tick for tray change detection, and writes `computer_capabilities`
+  only when it changed. Behaviour is unchanged.
+- **Day tracks.** `model::tracks` indexes tags by id and computes each tag path
+  once per load, shared as `Arc<str>` between segments of the same tag.

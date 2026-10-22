@@ -149,16 +149,16 @@ impl Runtime {
     }
     #[cfg(target_os = "macos")]
     pub fn pulse(&mut self) {
-        let Some((status, paused)) = self
+        let Some(blocked) = self
             .shared
             .control
             .try_lock()
             .ok()
-            .map(|control| (control.status.clone(), control.paused))
+            .map(|control| Sampler::blocked(&control.status, control.paused, now_ms()))
         else {
             return;
         };
-        let sample = self.sampler.sample(&status, paused);
+        let sample = self.sampler.sample_blocked(blocked);
         let _ = self.sender.try_send((now_ms(), sample));
     }
     pub fn status(&self) -> Option<draugr_time_daemon::Status> {
@@ -300,12 +300,18 @@ impl Sampler {
             retry: Instant::now(),
         }
     }
-    fn sample(&mut self, status: &draugr_time_daemon::Status, paused: bool) -> MockWatcher {
-        let now = now_ms();
-        let paused = status.computer.machine != "awake"
+    /// Whether this tick must not observe the desktop (asleep, locked or paused).
+    fn blocked(status: &draugr_time_daemon::Status, paused: bool, now: i64) -> bool {
+        status.computer.machine != "awake"
             || status.computer.locked == Some(true)
-            || paused && !status.paused_until.is_some_and(|until| until <= now);
-        if paused {
+            || paused && !status.paused_until.is_some_and(|until| until <= now)
+    }
+    #[cfg(all(test, target_os = "linux"))]
+    fn sample(&mut self, status: &draugr_time_daemon::Status, paused: bool) -> MockWatcher {
+        self.sample_blocked(Self::blocked(status, paused, now_ms()))
+    }
+    fn sample_blocked(&mut self, blocked: bool) -> MockWatcher {
+        if blocked {
             MockWatcher {
                 window: Err(WatcherError::Platform("Paused".into())),
                 idle: Err(WatcherError::Platform("Paused".into())),
@@ -376,11 +382,12 @@ fn spawn_worker(
             let tick_started = Instant::now();
             #[cfg(not(target_os = "macos"))]
             let (now, sample) = {
-                let (status, paused) = {
+                // Read the gate under the lock instead of cloning the whole status.
+                let blocked = {
                     let control = shared.control.lock().unwrap();
-                    (control.status.clone(), control.paused)
+                    Sampler::blocked(&control.status, control.paused, now_ms())
                 };
-                let sample = sampler.sample(&status, paused);
+                let sample = sampler.sample_blocked(blocked);
                 (now_ms(), sample)
             };
             #[cfg(target_os = "macos")]
@@ -397,25 +404,35 @@ fn spawn_worker(
             #[cfg(not(target_os = "macos"))]
             if let Some(computer) = &computer {
                 use draugr_time_watchers::ComputerWatcher;
-                shared.control.lock().unwrap().status.computer_capabilities =
-                    computer.capabilities();
+                let capabilities = computer.capabilities();
+                let mut control = shared.control.lock().unwrap();
+                if control.status.computer_capabilities != capabilities {
+                    control.status.computer_capabilities = capabilities;
+                }
             }
-            let status = shared.status();
-            if status.computer.machine == "awake" && last_machine != "awake" {
+            // One status copy per tick: it doubles as the change-detection key and is
+            // only cloned again when the tray actually needs a new status.
+            let mut comparison = shared.status();
+            let (updated_ts, idle_seconds) = (comparison.updated_ts, comparison.idle_seconds);
+            comparison.updated_ts = 0;
+            comparison.idle_seconds = None;
+            if comparison.computer.machine == "awake" && last_machine != "awake" {
                 // Wake and the display reconfiguration that follows touch many
                 // threads at once; return their freed pages once things settle.
                 reclaim_at = Some(Instant::now() + WAKE_RECLAIM_DELAY);
             }
-            last_machine.clone_from(&status.computer.machine);
+            if last_machine != comparison.computer.machine {
+                last_machine.clone_from(&comparison.computer.machine);
+            }
             if reclaim_at.is_some_and(|at| Instant::now() >= at) {
                 use super::memory::MemoryReclaimer;
                 super::memory::SystemReclaimer.reclaim();
                 reclaim_at = Some(Instant::now() + RECLAIM_PERIOD);
             }
-            let mut comparison = status.clone();
-            comparison.updated_ts = 0;
-            comparison.idle_seconds = None;
             if last_status.as_ref() != Some(&comparison) {
+                let mut status = comparison.clone();
+                status.updated_ts = updated_ts;
+                status.idle_seconds = idle_seconds;
                 super::tray::push_status(status);
                 last_status = Some(comparison);
             }
