@@ -1,5 +1,6 @@
 //! Native Draugr Time desktop.
 mod appearance;
+mod design;
 mod localization;
 mod reports;
 #[cfg(test)]
@@ -181,6 +182,7 @@ struct State {
     highlight: Option<String>,
     search: String,
     screen: &'static str,
+    rail_focus: Option<usize>,
     tab: usize,
     rows: Vec<Summary>,
     documents: Vec<Summary>,
@@ -297,6 +299,7 @@ impl State {
             documents: Vec::new(),
             search: String::new(),
             screen: "Day",
+            rail_focus: None,
             tab: 1,
             rows: Vec::new(),
             limit: 50,
@@ -309,8 +312,14 @@ impl State {
                 a: Box::new(pane_grid::Configuration::Pane(DayPane::Timeline)),
                 b: Box::new(pane_grid::Configuration::Pane(DayPane::Summary)),
             }),
-            theme: native_theme(false),
-            theme_preference: appearance::Preference::System,
+            theme: native_theme(benchmark && args.iter().any(|arg| arg == "--dark")),
+            theme_preference: if benchmark && args.iter().any(|arg| arg == "--dark") {
+                appearance::Preference::Dark
+            } else if benchmark && args.iter().any(|arg| arg == "--light") {
+                appearance::Preference::Light
+            } else {
+                appearance::Preference::System
+            },
             system_theme: iced::theme::Mode::None,
             grid_cache: widget::canvas::Cache::new(),
             cache: widget::canvas::Cache::new(),
@@ -404,8 +413,15 @@ impl State {
             self.rebuild();
         }
         let (id, task) = window::open(window::Settings {
-            size: iced::Size::new(1280.0, 820.0),
-            min_size: Some(iced::Size::new(900.0, 600.0)),
+            size: iced::Size::new(
+                if self.benchmark && std::env::args().any(|arg| arg == "--narrow") {
+                    640.0
+                } else {
+                    1280.0
+                },
+                820.0,
+            ),
+            min_size: Some(iced::Size::new(480.0, 600.0)),
             visible,
             exit_on_close_request: false,
             icon: crate::branding::window_icon().ok(),
@@ -602,6 +618,7 @@ impl State {
             iced::event::listen_with(|event, status, _| match event {
                 iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. })
                     if status == iced::event::Status::Ignored
+                        || key == keyboard::Key::Named(keyboard::key::Named::F6)
                         || (modifiers.command()
                             && matches!(&key,keyboard::Key::Character(c)if c.eq_ignore_ascii_case("f"))) =>
                 {
@@ -1115,6 +1132,47 @@ impl State {
                 }
             }
             Message::Key(key, modifiers) => {
+                use keyboard::key::Named;
+                if self.editor.is_none() && key == keyboard::Key::Named(Named::F6) {
+                    self.rail_focus = if self.rail_focus.is_some() {
+                        None
+                    } else {
+                        Some(0)
+                    };
+                    return widget::operation::focus(if self.rail_focus.is_some() {
+                        "rail"
+                    } else {
+                        "activity-search"
+                    });
+                }
+                if self.editor.is_none() {
+                    if let Some(index) = self.rail_focus {
+                        match key {
+                            keyboard::Key::Named(Named::ArrowDown | Named::ArrowRight) => {
+                                self.rail_focus = Some((index + 1) % 6);
+                                return Task::none();
+                            }
+                            keyboard::Key::Named(Named::ArrowUp | Named::ArrowLeft) => {
+                                self.rail_focus = Some((index + 5) % 6);
+                                return Task::none();
+                            }
+                            keyboard::Key::Named(Named::Enter | Named::Space) => {
+                                return self.update(if index == 5 {
+                                    self.recording_action()
+                                } else {
+                                    Message::Screen(
+                                        ["Day", "Week", "Tags", "Rules", "Settings"][index],
+                                    )
+                                });
+                            }
+                            keyboard::Key::Named(Named::Escape | Named::Tab) => {
+                                self.rail_focus = None;
+                                return widget::operation::focus("activity-search");
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 if self.screen == "Overview" && self.editor.is_none() {
                     use keyboard::key::Named;
                     match &key {
@@ -1745,48 +1803,153 @@ impl State {
         )
         .into()
     }
+    fn recording_action(&self) -> Message {
+        if self.runtime.is_none() && !self.fixture {
+            Message::Start
+        } else if self.status.state == "paused" {
+            Message::Resume
+        } else {
+            Message::Pause(Some(900_000))
+        }
+    }
     fn view(&self, _id: window::Id) -> Element<'_, Message> {
+        widget::responsive(move |size| self.view_sized(size.width)).into()
+    }
+    fn view_sized(&self, width: f32) -> Element<'_, Message> {
         if !self.settings_ui.preferences.onboarded
             && !self.fixture
             && (!self.runtime_test || self.onboarding_test)
         {
             return self.onboarding();
         }
-        let mut navigation = column![
-            image(image::Handle::from_bytes(crate::branding::logo(
-                self.theme.palette().background.r < 0.5
-            )))
-            .width(72)
-            .height(72)
-            .filter_method(image::FilterMethod::Nearest),
-            text("Draugr Time").size(23),
-            text(tr("LOCAL ACTIVITY TRACKER")).size(10),
-            space::vertical().height(14)
+        let narrow = design::narrow(width);
+        let palette = design::Palette::new(self.theme.palette().background.r < 0.5);
+        let logo: Element<'_, Message> = image(image::Handle::from_bytes(crate::branding::logo(
+            self.theme.palette().background.r < 0.5,
+        )))
+        .width(design::LOGO)
+        .height(design::LOGO)
+        .into();
+        let mut items = vec![container(logo).center_x(design::TARGET).into()];
+        for (index, (screen, icon)) in [
+            ("Day", "▤"),
+            ("Week", "▦"),
+            ("Tags", "◇"),
+            ("Rules", "≡"),
+            ("Settings", "⚙"),
         ]
-        .spacing(8);
-        for screen in [
-            "Day", "Overview", "Week", "Reports", "Tags", "Rules", "Settings",
-        ] {
-            navigation = navigation.push(
-                button(text(tr(screen)))
-                    .on_press(Message::Screen(screen))
-                    .width(Length::Fill)
-                    .style(if screen == self.screen {
-                        button::primary
-                    } else {
-                        button::text
-                    }),
+        .into_iter()
+        .enumerate()
+        {
+            items.push(
+                button(
+                    column![
+                        text(icon).size(design::HEADING),
+                        text(tr(screen)).size(design::LABEL)
+                    ]
+                    .align_x(Alignment::Center),
+                )
+                .on_press(Message::Screen(screen))
+                .width(design::TARGET)
+                .height(design::TARGET)
+                .style(move |_, status| {
+                    let active = screen == self.screen;
+                    button::Style {
+                        background: Some(
+                            if active {
+                                palette.accent_dim
+                            } else if matches!(status, button::Status::Hovered) {
+                                palette.hover
+                            } else {
+                                palette.side
+                            }
+                            .into(),
+                        ),
+                        text_color: if active {
+                            palette.accent_text
+                        } else {
+                            palette.text2
+                        },
+                        border: iced::Border {
+                            width: if self.rail_focus == Some(index) {
+                                2.0
+                            } else {
+                                0.0
+                            },
+                            color: palette.accent_text,
+                            radius: design::RADIUS.into(),
+                        },
+                        ..Default::default()
+                    }
+                })
+                .into(),
             );
         }
-        navigation = navigation
-            .push(space::vertical())
-            .push(text(tr("Local & private")).size(13))
-            .push(text(tr("Activity stays on this computer.")).size(11));
-        let sidebar = container(navigation)
-            .padding(18)
-            .width(184)
-            .height(Length::Fill)
-            .style(panel);
+        let rec = self.recording_action();
+        items.push(
+            tooltip(
+                button(
+                    text(if self.status.state == "paused" {
+                        "Ⅱ REC"
+                    } else if matches!(self.status.state.as_str(), "tracking" | "away" | "locked") {
+                        "● REC"
+                    } else {
+                        "○ REC"
+                    })
+                    .size(design::LABEL)
+                    .font(design::MONO),
+                )
+                .on_press(rec)
+                .width(design::TARGET)
+                .height(design::TARGET)
+                .style(move |_, _| button::Style {
+                    background: Some(
+                        if self.status.state == "paused" {
+                            palette.away_dim
+                        } else {
+                            palette.accent_dim
+                        }
+                        .into(),
+                    ),
+                    text_color: if self.status.state == "paused" {
+                        palette.away_text
+                    } else {
+                        palette.accent_text
+                    },
+                    border: iced::Border {
+                        width: if self.rail_focus == Some(5) { 2.0 } else { 0.0 },
+                        color: palette.accent_text,
+                        radius: design::RADIUS.into(),
+                    },
+                    ..Default::default()
+                }),
+                text(self.status_label()),
+                tooltip::Position::Right,
+            )
+            .into(),
+        );
+        let sidebar: Element<'_, Message> = if narrow {
+            container(scrollable(row(items).spacing(design::SMALL_GAP)).direction(
+                scrollable::Direction::Horizontal(scrollable::Scrollbar::default()),
+            ))
+            .padding(design::TOP_PADDING)
+            .width(Length::Fill)
+            .style(move |_| container::Style {
+                background: Some(palette.side.into()),
+                ..Default::default()
+            })
+            .into()
+        } else {
+            container(column(items).spacing(design::SMALL_GAP))
+                .padding(design::RAIL_PADDING)
+                .width(design::RAIL)
+                .height(Length::Fill)
+                .style(move |_| container::Style {
+                    background: Some(palette.side.into()),
+                    ..Default::default()
+                })
+                .into()
+        };
         let date = row![
             button(text(tr("‹"))).on_press(Message::Shift(-1)),
             text_input(&tr("YYYY-MM-DD"), &self.date_text)
@@ -1795,18 +1958,23 @@ impl State {
             button(text(tr("›"))).on_press(Message::Shift(1)),
             button(text(tr("Today"))).on_press(Message::Today)
         ]
-        .spacing(6)
+        .spacing(design::CONTROL_GAP)
         .align_y(Alignment::Center);
-        let toolbar = row![
-            date,
-            space::horizontal(),
-            text_input(&tr("Search activity · Ctrl/Cmd F"), &self.search)
-                .on_input(Message::Search)
-                .id("activity-search")
-                .width(250)
-        ]
-        .spacing(12)
-        .align_y(Alignment::Center);
+        let search = text_input(&tr("Search activity · Ctrl/Cmd F"), &self.search)
+            .on_input(Message::Search)
+            .id("activity-search");
+        let toolbar: Element<'_, Message> = if narrow {
+            column![date, search].spacing(design::GAP).into()
+        } else {
+            row![
+                date,
+                space::horizontal(),
+                search.width(design::SEARCH_WIDTH)
+            ]
+            .spacing(design::GAP)
+            .align_y(Alignment::Center)
+            .into()
+        };
         let control: Element<'_, Message> = if self.runtime.is_none() {
             button(text(tr("Start recording")))
                 .on_press(Message::Start)
@@ -1818,22 +1986,21 @@ impl State {
                 button(text(tr("Pause"))).on_press(Message::Pause(None)),
                 button(text(tr("15 min"))).on_press(Message::Pause(Some(900_000)))
             ]
-            .spacing(6)
+            .spacing(design::CONTROL_GAP)
             .into()
         };
-        let heading = row![
-            column![
-                text(tr(if self.screen == "Day" {
-                    "Day overview"
-                } else {
-                    self.screen
-                }))
-                .size(25),
-                text(localization::date_label(self.date)).size(12)
-            ]
-            .spacing(2),
-            space::horizontal(),
-            text(self.status_label()).size(13),
+        let title = column![
+            text(tr(if self.screen == "Day" {
+                "Day overview"
+            } else {
+                self.screen
+            }))
+            .size(design::TITLE),
+            text(localization::date_label(self.date)).size(design::META)
+        ]
+        .spacing(2);
+        let actions = row![
+            text(self.status_label()).size(design::BODY),
             control,
             button(text(localized(
                 "Theme: {theme}",
@@ -1842,8 +2009,16 @@ impl State {
             .on_press(Message::Theme),
             button(text(tr("Quit"))).on_press(Message::Quit)
         ]
-        .spacing(9)
+        .spacing(design::CONTROL_GAP)
         .align_y(Alignment::Center);
+        let heading: Element<'_, Message> = if narrow {
+            column![title, actions.wrap()].spacing(design::GAP).into()
+        } else {
+            row![title, space::horizontal(), actions]
+                .spacing(design::CONTROL_GAP)
+                .align_y(Alignment::Center)
+                .into()
+        };
         let content = if self.screen == "Day" {
             self.day_view()
         } else if matches!(self.screen, "Overview" | "Week" | "Reports") {
@@ -1870,7 +2045,30 @@ impl State {
             .padding(24)
             .into()
         };
-        let mut main = column![toolbar, heading].spacing(10);
+        // shortcut: legacy bodies retain desktop width; replace overflow per screen in slices 2–5.
+        let content: Element<'_, Message> = if narrow {
+            scrollable(
+                container(content)
+                    .width(design::LEGACY_WIDTH)
+                    .height(design::NARROW_BODY_HEIGHT),
+            )
+            .direction(scrollable::Direction::Horizontal(
+                scrollable::Scrollbar::default(),
+            ))
+            .into()
+        } else {
+            content
+        };
+        let mut main = column![
+            toolbar,
+            heading,
+            row![
+                button(text(tr("Overview"))).on_press(Message::Screen("Overview")),
+                button(text(tr("Reports"))).on_press(Message::Screen("Reports"))
+            ]
+            .spacing(design::GAP)
+        ]
+        .spacing(design::GAP);
         main = main.push(
             button(text(tr("Undo tag action · Ctrl/Cmd Z"))).on_press_maybe(
                 (!self.tag_undo.is_empty()).then_some(Message::Edit(tagging::Edit::Undo)),
@@ -1899,16 +2097,16 @@ impl State {
                                 tagging::Edit::Threshold(i64::MAX / 60_000)
                             ))
                         ]
-                        .spacing(8)
+                        .spacing(design::CONTROL_GAP)
                     ]
-                    .spacing(8),
+                    .spacing(design::CONTROL_GAP),
                 )
-                .padding(10)
+                .padding(design::RAIL_PADDING)
                 .style(panel),
             );
         }
         if self.away_range.is_some() {
-            let mut recent = row![].spacing(6);
+            let mut recent = row![].spacing(design::CONTROL_GAP);
             let mut ids = Vec::new();
             for &id in &self.recent_tags {
                 if !ids.contains(&id) && self.tags.iter().any(|t| t.id == id && t.archived != 1) {
@@ -1928,7 +2126,7 @@ impl State {
         if !self.error.is_empty() {
             main = main.push(
                 text(localization::error(&self.error))
-                    .size(13)
+                    .size(design::BODY)
                     .color(Color::from_rgb8(200, 75, 75)),
             );
         } else if self.status.state == "error" {
@@ -1939,7 +2137,7 @@ impl State {
                 .find_map(|backend| backend.error.as_deref())
                 .unwrap_or("Tracking needs attention; check Settings.");
             main = main.push(
-                button(text(localization::error(error)).size(12))
+                button(text(localization::error(error)).size(design::META))
                     .on_press(Message::Screen("Settings"))
                     .style(button::danger),
             );
@@ -1953,14 +2151,77 @@ impl State {
             ])
             .height(Length::Fill);
         // Track the background as a quad so tiny-skia repaints reused buffers after theme changes.
-        let base: Element<'_, Message> = container(row![
-            sidebar,
-            container(main).padding(16).height(Length::Fill)
-        ])
+        let title = if self.screen == "Week" {
+            "Week"
+        } else if self.screen == "Day" {
+            "Whole day"
+        } else {
+            self.screen
+        };
+        let mut details = column![
+            text(tr(title)).size(design::HEADING),
+            text(self.status_label()).size(design::BODY)
+        ]
+        .spacing(design::GAP);
+        for (label, value) in [
+            "ACTIVE TIME",
+            "AWAY TIME",
+            "TAGGED TIME",
+            "UNTAGGED ACTIVITY",
+        ]
+        .into_iter()
+        .zip(self.metrics)
+        {
+            details = details.push(column![
+                text(tr(label)).size(design::LABEL).color(palette.text2),
+                text(model::duration(value))
+                    .font(design::MONO)
+                    .size(design::HEADING)
+            ]);
+        }
+        details = details.push(space::vertical()).push(
+            text(tr("Activity stays on this computer."))
+                .size(design::LABEL)
+                .color(palette.text3),
+        );
+        let right = container(details)
+            .padding(design::PADDING)
+            .width(if narrow {
+                Length::Fill
+            } else {
+                Length::Fixed(if self.screen == "Settings" {
+                    design::SETTINGS_PANEL
+                } else {
+                    design::PANEL
+                })
+            })
+            .height(if narrow { Length::Shrink } else { Length::Fill })
+            .style(move |_| container::Style {
+                background: Some(palette.side.into()),
+                border: iced::Border {
+                    width: 1.0,
+                    color: palette.line,
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+        let main = container(main)
+            .padding(design::PADDING)
+            .width(Length::Fill)
+            .height(Length::Fill);
+        let base: Element<'_, Message> = if narrow {
+            let main = main.height(design::NARROW_MAIN_HEIGHT);
+            container(scrollable(
+                column![sidebar, main, right].spacing(design::GAP),
+            ))
+        } else {
+            container(row![sidebar, main, right])
+        }
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(|theme: &Theme| container::Style {
-            background: Some(theme.palette().background.into()),
+        .style(move |_| container::Style {
+            background: Some(palette.bg.into()),
+            text_color: Some(palette.text),
             ..Default::default()
         })
         .into();
@@ -1971,7 +2232,7 @@ impl State {
             ]))
             .width(650)
             .max_height(520)
-            .padding(10)
+            .padding(design::RAIL_PADDING)
             .style(panel);
             widget::stack![
                 base,
@@ -1990,23 +2251,16 @@ impl State {
 }
 
 fn native_theme(dark: bool) -> Theme {
+    let p = design::Palette::new(dark);
     Theme::custom(
         "Draugr Time",
         iced::theme::Palette {
-            background: if dark {
-                Color::from_rgb8(14, 25, 35)
-            } else {
-                Color::from_rgb8(244, 246, 249)
-            },
-            text: if dark {
-                Color::from_rgb8(220, 231, 237)
-            } else {
-                Color::from_rgb8(36, 55, 70)
-            },
-            primary: Color::from_rgb8(39, 143, 133),
-            success: Color::from_rgb8(56, 162, 128),
-            danger: Color::from_rgb8(208, 83, 83),
-            warning: Color::from_rgb8(217, 165, 56),
+            background: p.bg,
+            text: p.text,
+            primary: p.accent,
+            success: p.accent,
+            danger: p.danger,
+            warning: p.away,
         },
     )
 }
@@ -2015,6 +2269,67 @@ fn native_theme(dark: bool) -> Theme {
 mod theme_render_tests {
     use super::*;
     use iced::advanced::{layout, mouse, renderer, widget::Tree, Layout, Renderer as _};
+
+    #[test]
+    fn rail_keyboard_focus_moves_and_activates_without_changing_day_state() {
+        let (mut state, _) = State::boot();
+        let day = state.day;
+        let key = |named| Message::Key(keyboard::Key::Named(named), keyboard::Modifiers::empty());
+        let _ = state.update(key(keyboard::key::Named::F6));
+        assert_eq!(state.rail_focus, Some(0));
+        let _ = state.update(key(keyboard::key::Named::ArrowDown));
+        assert_eq!(state.rail_focus, Some(1));
+        assert_eq!(state.screen, "Day");
+        let _ = state.update(key(keyboard::key::Named::Enter));
+        assert_eq!(state.screen, "Week");
+        assert_eq!(state.day, day);
+        let _ = state.update(key(keyboard::key::Named::Escape));
+        assert_eq!(state.rail_focus, None);
+    }
+
+    #[test]
+    fn shell_keeps_the_rail_and_panel_at_their_spec_widths() {
+        let (mut state, _) = State::boot();
+        state.fixture = true;
+        state.theme = native_theme(true);
+        let size = iced::Size::new(1280.0, 820.0);
+        let viewport = iced::Rectangle::with_size(size);
+        let mut renderer = iced::Renderer::new(design::UI, 16.0.into());
+        let theme = native_theme(true);
+        let mut view = state.view_sized(size.width);
+        let mut tree = Tree::new(view.as_widget());
+        let node = view.as_widget_mut().layout(
+            &mut tree,
+            &renderer,
+            &layout::Limits::new(iced::Size::ZERO, size),
+        );
+        renderer.reset(viewport);
+        view.as_widget().draw(
+            &tree,
+            &mut renderer,
+            &theme,
+            &renderer::Style {
+                text_color: theme.palette().text,
+            },
+            Layout::new(&node),
+            mouse::Cursor::Unavailable,
+            &viewport,
+        );
+        let side = iced::Background::Color(design::Palette::new(true).side);
+        let rectangles: Vec<_> = renderer
+            .layers()
+            .iter()
+            .flat_map(|layer| &layer.quads)
+            .filter(|(_, background)| *background == side)
+            .map(|(quad, _)| quad.bounds)
+            .collect();
+        assert!(rectangles
+            .iter()
+            .any(|r| r.x == 0.0 && r.width == 72.0 && r.height == 820.0));
+        assert!(rectangles
+            .iter()
+            .any(|r| r.x == 936.0 && r.width == 344.0 && r.height == 820.0));
+    }
 
     #[test]
     fn theme_switch_draws_a_damage_tracked_full_window_background() {
@@ -2054,26 +2369,15 @@ mod theme_render_tests {
     }
 }
 fn panel(theme: &Theme) -> container::Style {
-    let dark = theme.palette().background.r < 0.5;
+    let p = design::Palette::new(theme.palette().background.r < 0.5);
     container::Style {
-        background: Some(
-            if dark {
-                Color::from_rgb8(24, 37, 49)
-            } else {
-                Color::WHITE
-            }
-            .into(),
-        ),
+        background: Some(p.surf.into()),
         border: iced::Border {
             width: 1.0,
-            color: if dark {
-                Color::from_rgb8(42, 57, 69)
-            } else {
-                Color::from_rgb8(220, 228, 234)
-            },
-            radius: 8.0.into(),
+            color: p.line,
+            radius: design::RADIUS.into(),
         },
-        ..container::Style::default()
+        ..Default::default()
     }
 }
 
@@ -2156,6 +2460,9 @@ pub fn run() -> iced::Result {
             id: Some("org.draugrtime.app".into()),
             ..Default::default()
         })
+        .font(include_bytes!("../../fonts/InterTight.ttf").as_slice())
+        .font(include_bytes!("../../fonts/JetBrainsMono-Regular.ttf").as_slice())
+        .default_font(design::UI)
         .title(|_: &State, _| "Draugr Time".to_string())
         .subscription(State::subscription)
         .theme(|state: &State, _| state.theme.clone())

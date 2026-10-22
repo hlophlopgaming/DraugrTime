@@ -821,3 +821,25 @@ Retain entries whose Exec cannot currently be resolved, because historical apps
 and launcher wrappers can still provide names and icons. The overview resolves
 its name-only icon request against a unique cached process/name pair; ambiguous
 names retain the fallback rather than selecting another application's icon.
+
+
+## 2026-10-23 — M12 design slice 1: local theme and responsive shell
+
+- Restore `docs/design.md`, its reference README and the design rules from
+  `20dc591` (reachable from `origin/main`), without switching branches or
+  replacing unrelated local roadmap work. Reference PNGs are absent in that
+  commit; the written specification is the comparison source.
+- Keep all design palette colors and shell dimensions in `desktop/design.rs`.
+  Bundle Inter Tight and JetBrains Mono plus their SIL OFL licenses; load their
+  bytes directly into Iced, with no runtime downloads or additional dependency.
+- A responsive widget chooses the 72 px rail / 344 px side panel layout at
+  760 px. Below that threshold navigation becomes a top bar and the side panel
+  follows the main content in a vertical scroll view. Keep legacy screen bodies
+  horizontally scrollable until their own scheduled design slices; preserve
+  the Day divider, selection and summary behavior in this slice.
+- Preserve Overview and Reports as secondary main-column navigation. Keep
+  the side panel's initial content to existing totals/status; screen-specific
+  editors, summary tabs and Settings section navigation belong to slices 2–5.
+- Iced 0.14 buttons do not provide keyboard focus. F6 enters/leaves the rail;
+  arrows move its visible accent focus ring, Enter/Space activate, Escape/Tab
+  return to search. No animation subscription, polling or storage changes.
