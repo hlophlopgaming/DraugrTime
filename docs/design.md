@@ -46,6 +46,51 @@ Implement it in Iced with the existing tiny-skia renderer; do not add a web view
 - Below 760 px wide: rail becomes a top bar, the right panel moves under the
   main column, wide tables scroll horizontally.
 
+## Components
+
+Build these once, in a shared module, and use them everywhere. Most of the
+current UI is buttons with a solid accent fill; in the new design almost
+nothing is.
+
+| Component | Look | Use |
+|---|---|---|
+| **Primary button** | accent fill, accentInk text, 600, radius 9, height 36–40 | at most **one per panel/dialog**: "Tag", "Save rule", "+ New tag", "Open Draugr Time" |
+| **Secondary button** | transparent, 1 px `line` border, text color, radius 8–9 | Export, Merge into…, Back up now |
+| **Ghost button** | no border, no fill, text2; `hover` background on hover | ‹ › day arrows, ×, icon buttons |
+| **Destructive** | dangerText on a dark-red tint, 1 px red border | Delete tag, Delete range |
+| **Segmented control** | `side`/`bg` track with 3 px padding, radius 10; active option = `hover` fill + text 600, others text3 | Full day / Active hours / Fit selection; Apps / Docs / Tags |
+| **Rail item** | 56 px wide, icon 18 px + 11 px label; active = accentDim fill + accent text | left rail only |
+| **Card** | `surf` fill, 1 px `line`, radius 14, padding 16–20 | timeline, summaries, lists |
+| **Summary strip** | one card split by 1 px dividers into cells: 10 px caps label, 17 px mono value, small bar or meta | top-right of Day and Week |
+| **Chip** | 28 px high, 1 px border, square corners, × to remove | excluded / masked apps |
+| **Switch** | square knob, accent track when on | Settings, Rules |
+| **Text field / select** | `surf` fill, 1 px `line` border, radius 8, 34–38 px | search, filters, rule pattern |
+| **Tooltip / popover** | `raised` fill, 1 px border, radius 10, soft shadow | hover cards, REC menu |
+| **Status dot** | 7–9 px circle | recording state, backend status |
+
+## What moves or disappears (from the current UI)
+
+The redesign is not a reskin of today's layout. When implementing, remove or
+relocate these controls instead of restyling them:
+
+| Today | In the new design |
+|---|---|
+| Header buttons **Pause** and **15 min** | gone; the **REC** button at the bottom of the rail opens the "Don't track for" menu (5/10/15/30/60) |
+| **Theme: System** button | Settings → General |
+| **Quit** button | tray menu only |
+| "Tracking" status pills in the header, footer and right panel | only the REC button in the rail (and the tray) |
+| Date field "2026-10-23" + ‹ › + Today | inside the timeline card header: ‹ Today · Fri 23 Oct › (ghost arrows); Today appears only when another day is shown |
+| Search field in the header | Ctrl/Cmd+F opens it; on Day the right panel has its own filter field |
+| **Overview** / **Reports** buttons | Overview becomes the "Activity by hour" card and the summary strip; Reports lives in Week ("Open full report →") |
+| **Undo tag action** button | no permanent button: after tagging show a small toast "Tagged 1h 30m · Undo" for 6 s; Ctrl/Cmd+Z always works |
+| Four separate stat cards (Active, Away, Tagged, Untagged) | one summary strip in the header (Active with away, Tagged, Untagged + Review) |
+| Right panel repeating the same totals | right panel is **Whole day** (Apps / Docs / Tags list) — no duplicated totals |
+| "Whole day" summary under the timeline | moves to the right panel; the space under the timeline is Activity by hour |
+| Divider "Drag divider to resize" | not needed: the timeline fills the height |
+| "Pan across day" slider | horizontal scroll/drag on the timeline + range control; no slider |
+| Long legend line | short legend (Active, Away, Untagged, Now) + hints on one line |
+| Empty timeline between 00:00 and first activity | default range is **Active hours** (first to last activity, rounded to the hour) |
+
 ## Screens
 
 ### Day
