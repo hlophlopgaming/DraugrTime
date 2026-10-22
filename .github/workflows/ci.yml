@@ -121,7 +121,7 @@ jobs:
           chmod +x artifacts/Draugr-Time-{Linux,macOS}/draugr-time artifacts/Draugr-Time-{Linux,macOS}/draugr-time-cli
           cp packaging/org.draugrtime.app.desktop artifacts/Draugr-Time-Linux/
           mkdir -p artifacts/Draugr-Time-Linux/icons/hicolor/128x128/apps
-          cp logo/blackDraugr128.png artifacts/Draugr-Time-Linux/icons/hicolor/128x128/apps/org.draugrtime.app.png
+          cp logo/appIcon128.png artifacts/Draugr-Time-Linux/icons/hicolor/128x128/apps/org.draugrtime.app.png
           tar -C artifacts/Draugr-Time-Linux -czf release/Draugr-Time-${GITHUB_REF_NAME}-Linux-x86_64.tar.gz draugr-time org.draugrtime.app.desktop icons
           cp artifacts/Draugr-Time-macOS/Draugr-Time-macOS.tar.gz release/Draugr-Time-${GITHUB_REF_NAME}-macOS.tar.gz
           cp artifacts/Draugr-Time-Linux/Draugr-Time-x86_64.AppImage release/Draugr-Time-${GITHUB_REF_NAME}-Linux-x86_64.AppImage

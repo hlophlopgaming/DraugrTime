@@ -62,7 +62,7 @@ impl NativeTray {
         .map_err(|e| e.to_string())?;
         let icon = TrayIconBuilder::new()
             .with_tooltip(tr("Draugr Time · Not recording"))
-            .with_icon(Self::image([130, 145, 160]))
+            .with_icon(Self::image(crate::branding::TRAY_NOT_RECORDING))
             .with_menu(Box::new(menu))
             .build()
             .map_err(|e| e.to_string())?;
@@ -84,14 +84,17 @@ impl NativeTray {
     pub fn update(&self, status: &Status, active: i64, fixture: bool) {
         let state = status.state.as_str();
         let (label, color) = match state {
-            "tracking" => ("Tracking", [56, 162, 128]),
-            "paused" => ("Paused", [217, 165, 56]),
-            "locked" => ("Locked", [160, 137, 181]),
-            "asleep" => ("Sleep", [111, 128, 162]),
-            "away" => ("AFK", [217, 165, 56]),
-            "error" => ("Needs attention", [208, 83, 83]),
+            // One colour per meaning: brand mint while recording (including
+            // AFK/locked/asleep, which are recorded states), red whenever
+            // nothing is being recorded. See docs/design.md, "Tray icon".
+            "tracking" => ("Tracking", crate::branding::TRAY_RECORDING),
+            "away" => ("AFK", crate::branding::TRAY_RECORDING),
+            "locked" => ("Locked", crate::branding::TRAY_RECORDING),
+            "asleep" => ("Sleep", crate::branding::TRAY_RECORDING),
+            "paused" => ("Paused", crate::branding::TRAY_NOT_RECORDING),
+            "error" => ("Needs attention", crate::branding::TRAY_NOT_RECORDING),
             "starting" => ("Starting", [130, 145, 160]),
-            _ => ("Not recording", [130, 145, 160]),
+            _ => ("Not recording", crate::branding::TRAY_NOT_RECORDING),
         };
         let next = Shown {
             label: tr(label),
