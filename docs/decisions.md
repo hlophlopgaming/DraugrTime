@@ -847,3 +847,19 @@ highlight, theme and date; canvas also invalidates on size changes.
 - Rules matching on title no longer match masked applications' titles; rules on
   the application still work.
 
+## 2026-10-22 — Timed pauses only; ActivityWatch categories; Git branch deferred
+
+- **No indefinite pause in the UI.** The tray and the window offer only
+  "Don't track for…" 5 / 10 / 15 / 30 / 60 min, and recording resumes by
+  itself. Reason: users forget to resume and silently lose history. The
+  recording schedule and excluded apps cover longer breaks; the localhost API
+  and CLI may keep an open-ended pause for scripts.
+- **Recording starts when the app opens**, and the first launch asks once
+  whether to enable autostart, because tracking only works while the app runs.
+- **ActivityWatch interoperability for tags goes through categories.**
+  ActivityWatch has no manual tag ranges; its categories (hierarchical name,
+  regex, color) map to Draugr Time tags plus auto-tagging rules, in both
+  directions. Manual tag ranges are not exported to ActivityWatch.
+- **Git repository/branch detection moved from M12 to Later.** The app is not
+  aimed at programmers and full file paths cover most of the need; revisit for
+  2.0 only on user demand.

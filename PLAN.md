@@ -156,7 +156,7 @@ The desktop app is the product. Background tracking is embedded in the desktop p
 ### Screens
 
 **1. Day view (main screen, ManicTime's "Day view")**
-- Toolbar: previous/next day, Today, date picker, search, tracking status pill (Tracking / Paused / Away / Error) with a dropdown: Pause 15 min / 1 h / until resumed.
+- Toolbar: previous/next day, Today, date picker, search, tracking status pill (Tracking / Paused / Away / Error) with a dropdown: **Don't track for** 5 / 10 / 15 / 30 / 60 min (timed pauses only, see §5.10).
 - Timeline tracks, top to bottom: **Tags**, **Computer usage** (active / AFK / asleep / off, plus explicit recording gaps and diagnostic `Unobserved`), **Applications** (stable color per app), **Documents** (window titles, URLs from M9). Track order and visibility configurable.
 - Zoom from whole day down to minutes; scroll horizontally; hover shows app, title, start–end, duration.
 - Click a block to select it; drag to select any range; Shift-click to extend. Double-click an app block selects its continuous span.
@@ -198,17 +198,20 @@ The desktop app is the product. Background tracking is embedded in the desktop p
 **8. Settings**
 - *Language*: detect and follow the OS language by default; let the user select a language or return to "System default" in Settings, save the choice across restarts, and fall back to English when a translation is unavailable.
 - *Tracking*: away threshold, away prompt on/off, start with system, start minimized to tray.
-- *Privacy*: excluded apps (not recorded at all), title masking per app, pause shortcuts, "delete data for range".
-- *Data*: database location, backup now / automatic backups, import (ActivityWatch), export.
+- *Privacy*: excluded apps (not recorded at all), title masking per app, "Don't track for" shortcuts, "delete data for range".
+- *Data*: database location, backup now / automatic backups, import (ActivityWatch history and categories), export (Draugr Time archive, ActivityWatch categories).
 - *Status & permissions*: per-backend status (Windows / macOS Accessibility / X11 / Wayland GNOME/KDE/wlroots / browser extension) with a fix-it hint for each problem.
 - *About*: version, license, link to the repo.
 
 **9. First-run onboarding (3–4 steps)**
 - What is tracked and that it never leaves the machine → grant permissions (macOS Accessibility; on Wayland: install the GNOME extension / KWin script or explain wlroots) → done, open Day view.
+- Recording starts as soon as the app opens; there is no separate "Start" step.
+- On first launch, while autostart is off, ask once in a small dialog: *"Start Draugr Time with your computer? Tracking only works while the app is running."* → **Yes** / **No**. "No" is remembered and never asked again; the choice stays editable in Settings → Tracking → Start with system.
 
 **10. System tray / menu bar**
 - Icon shows state: tracking / paused / away / error.
-- Menu: open Draugr Time, current activity, today's active time, **tag the last N minutes** (quick tag), Pause 15 min / 1 h / until resumed, Settings, Quit.
+- Menu: open Draugr Time, current activity, today's active time, **tag the last N minutes** (quick tag), **Don't track for…** 5 / 10 / 15 / 30 / 60 min, Settings, Quit.
+- **Timed pauses only.** "Don't track for…" is the user's way to say *I'm AFK, don't record this*. Picking a preset stops recording at once, with no confirmation, and recording resumes by itself when the time ends. There is no "pause until resumed" in the tray or the window: people forget to turn tracking back on and lose hours of history. While paused, the tray icon and the status pill show the paused state and the remaining time, with **Resume now** and **+5 / +15 min**. The paused range appears on the Computer usage track as a manual pause. The recording schedule (§5.8) and excluded apps remain the way to stop recording for longer.
 - Closing the main window keeps tracking in the background.
 
 ### Empty and error states (required on every screen)
@@ -358,10 +361,20 @@ Each milestone = one focused AI session. Do not start the next until the accepta
 - Notes on tagged ranges.
 - Keyboard shortcuts, "tag the last N minutes", compact mini window.
 - Documents: full file path where the OS/application exposes it.
-- Git repository and branch detection for terminals and IDEs.
+- **"Don't track for…" timed pauses (§5.10).** Replace the current tray items "Pause until resumed" and "Pause for 15 minutes" with presets 5 / 10 / 15 / 30 / 60 min in the tray menu and the window's status pill; remove the indefinite pause from the UI (the localhost API and CLI may keep `POST /pause` without a duration for scripts). Show remaining time, Resume now and +5 / +15 min while paused.
+  - ✅ Tests: each preset stops recording immediately and resumes at the right time, including across sleep/resume and app restart during a pause; extending and resuming early work; the pause is stored as a manual pause, not AFK; tray and window stay in sync.
+- **Autostart prompt on first launch (§5.9).** Ask once whether to start with the system; reuse the existing Settings autostart toggle; never ask again after an answer.
+  - ✅ Tests: shown only on first launch with autostart off; "Yes" enables autostart via the existing startup backend and reports its errors; "No" persists; older settings files load without showing it again to existing users.
+- **ActivityWatch categories import / export.** ActivityWatch has no manual tags; its equivalent is *categories* (hierarchical name, regex, color), exported from its Settings → Categories as JSON. Map them both ways to Draugr Time's hierarchical tags and auto-tagging rules (M6):
+  - Import: each category becomes a tag with the same hierarchy and color plus a regex rule; show a preview before importing ("these rules would tag 34 h in the last 7 days") and reuse "apply to history" with undo. Existing tags with the same path are reused, not duplicated.
+  - Export: tags with their rules are written as an ActivityWatch categories file that ActivityWatch's categories screen accepts.
+  - ActivityWatch matches a category regex against application and title together; imported rules match either field. ActivityWatch fields with no Draugr Time equivalent (for example the category score) are dropped with a note in the import summary.
+  - Manual tag ranges have no place in ActivityWatch and are not exported there; document this.
+  - Verify the exact ActivityWatch categories JSON against its source and a real export before implementing.
+  - ✅ Tests: round trip Draugr Time → ActivityWatch format → Draugr Time keeps hierarchy, colors, regexes and case sensitivity; invalid regexes and unknown rule types are reported, not silently skipped; import is atomic.
 
 ### Later
-Screenshots track (as in ManicTime), DB encryption, multi-device sync (CRDT or self-hosted server), MCP server on top of the local API, browser extensions (former M9), Linux Flatpak packaging (deferred from M11).
+Git repository and branch detection for terminals and IDEs (moved out of M12: Draugr Time is not aimed at programmers, and full file paths cover most of it; revisit for a 2.0 only if users ask). Screenshots track (as in ManicTime), DB encryption, multi-device sync (CRDT or self-hosted server), MCP server on top of the local API, browser extensions (former M9), Linux Flatpak packaging (deferred from M11).
 
 ---
 

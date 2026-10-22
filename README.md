@@ -97,7 +97,7 @@ and [desktop usage](docs/desktop.md) for settings and platform notes.
 - [x] **M10 — 1.0:** app icon everywhere, built-in CLI on Linux/macOS, first-run onboarding, minimal privacy settings.
 - [x] **M11 — 1.1:** installers: Windows installer + portable zip, Linux AppImage, macOS DMG (Flatpak deferred).
 - [x] **M11.1:** title masking for selected applications.
-- [ ] **M12:** design, backups, notes, shortcuts, file paths, Git branch detection.
+- [ ] **M12:** design, backups, notes, shortcuts, file paths, timed "Don't track for…" pauses, autostart prompt, ActivityWatch categories import/export.
 
 Details: [PLAN.md](PLAN.md) · [Architecture decisions](docs/decisions.md).
 
