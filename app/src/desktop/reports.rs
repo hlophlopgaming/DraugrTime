@@ -1210,7 +1210,12 @@ impl State {
             for r in data.report.rows(group(ui.group), ui.filter) {
                 body = body.push(
                     row![
-                        text(translate_label(&r.label)).width(Length::Fill),
+                        text(if ui.group == 1 {
+                            translate_application(&r.label)
+                        } else {
+                            translate_label(&r.label)
+                        })
+                        .width(Length::Fill),
                         text(model::duration(r.duration_ms)).width(85),
                         text(format!("{:.1}%", r.share * 100.0)).width(65)
                     ]
@@ -1349,7 +1354,7 @@ impl State {
                         }
                         let label = format!(
                             "{} · {} · {:.1}%",
-                            translate_label(&slice.application),
+                            translate_application(&slice.application),
                             model::duration(slice.duration),
                             slice.duration as f64 / report.active_ms as f64 * 100.0
                         );
@@ -1357,7 +1362,7 @@ impl State {
                             button(overview_columns(
                                 row![
                                     self.app_icon(&slice.application, &slice.application),
-                                    text(translate_label(&slice.application)).size(13)
+                                    text(translate_application(&slice.application)).size(13)
                                 ]
                                 .spacing(6)
                                 .align_y(Alignment::Center)
@@ -1380,7 +1385,18 @@ impl State {
                         ));
                         if !slice.members.is_empty() {
                             legend = legend.push(
-                                container(text(slice.members.join(", ")).size(11)).padding([0, 12]),
+                                container(
+                                    text(
+                                        slice
+                                            .members
+                                            .iter()
+                                            .map(|name| translate_application(name))
+                                            .collect::<Vec<_>>()
+                                            .join(", "),
+                                    )
+                                    .size(11),
+                                )
+                                .padding([0, 12]),
                             );
                         }
                     }
@@ -1441,6 +1457,9 @@ fn group(i: usize) -> GroupBy {
         2 => GroupBy::Document,
         _ => GroupBy::Tag,
     }
+}
+fn translate_application(name: &str) -> String {
+    translate_label(&crate::icons::application_name(name))
 }
 fn translate_label(s: &str) -> String {
     if [
@@ -1756,7 +1775,7 @@ impl canvas::Program<Message> for Donut<'_> {
             {
                 tooltip = Some(format!(
                     "{} · {} · {:.1}%",
-                    translate_label(&s.application),
+                    translate_application(&s.application),
                     model::duration(s.duration),
                     s.duration as f64 / self.report.active_ms as f64 * 100.0
                 ));

@@ -48,7 +48,8 @@ fn desktop_executable(
 /// The executable is resolved through PATH once, when the entry is parsed.
 #[cfg(target_os = "linux")]
 struct DesktopEntry {
-    executable: std::path::PathBuf,
+    executable: Option<std::path::PathBuf>,
+    id: String,
     icon: Option<String>,
     name: Option<String>,
     wm_class: Option<String>,
@@ -59,13 +60,24 @@ struct DesktopEntry {
 impl DesktopEntry {
     fn parse(text: &str) -> Option<Self> {
         let values = desktop_values(text);
+        values.get("Exec")?;
         Some(Self {
-            executable: desktop_executable(&values)?,
+            executable: desktop_executable(&values),
+            id: String::new(),
             icon: values.get("Icon").map(|value| (*value).to_owned()),
             name: values.get("Name").map(|value| (*value).to_owned()),
             wm_class: values
                 .get("StartupWMClass")
-                .map(|value| (*value).to_owned()),
+                .map(|value| (*value).to_owned())
+                .or_else(|| {
+                    shlex::split(values.get("Exec")?)?
+                        .into_iter()
+                        .find_map(|arg| {
+                            let id = arg.strip_prefix("steam://rungameid/")?;
+                            (!id.is_empty() && id.bytes().all(|c| c.is_ascii_digit()))
+                                .then(|| format!("steam_app_{id}"))
+                        })
+                }),
             listed: values.get("NoDisplay") != Some(&"true")
                 && values.get("Hidden") != Some(&"true")
                 && values.get("Type").is_none_or(|kind| *kind == "Application"),
@@ -73,7 +85,7 @@ impl DesktopEntry {
     }
     /// `process` must already be canonical.
     fn icon_for(&self, process: &std::path::Path, app_name: &str) -> Option<(u8, String)> {
-        if self.executable != process {
+        if self.executable.as_deref() != Some(process) {
             return None;
         }
         let icon = self.icon.clone()?;
@@ -176,6 +188,38 @@ fn application_directories() -> Vec<std::path::PathBuf> {
     );
     directories
 }
+#[cfg(target_os = "linux")]
+fn named_entry<'a>(entries: &'a [DesktopEntry], name: &str) -> Option<&'a DesktopEntry> {
+    // Desktop IDs take precedence over shared executables such as Steam and Flatpak.
+    entries
+        .iter()
+        .find(|entry| {
+            !entry.id.is_empty()
+                && (entry.id.eq_ignore_ascii_case(name)
+                    || name
+                        .strip_suffix(".desktop")
+                        .is_some_and(|id| entry.id.eq_ignore_ascii_case(id)))
+        })
+        .or_else(|| {
+            let mut matches = entries.iter().filter(|entry| {
+                [entry.wm_class.as_deref(), entry.name.as_deref()]
+                    .into_iter()
+                    .flatten()
+                    .any(|value| value.eq_ignore_ascii_case(name))
+            });
+            let entry = matches.next()?;
+            matches.next().is_none().then_some(entry)
+        })
+}
+
+pub fn application_name(name: &str) -> String {
+    #[cfg(target_os = "linux")]
+    if let Some(name) = named_entry(&desktop_index(), name).and_then(|entry| entry.name.clone()) {
+        return name;
+    }
+    name.into()
+}
+
 /// Every `.desktop` entry, read once and reused by all icon lookups. Rebuilt after
 /// a few minutes so newly installed applications are picked up. Previously each
 /// cache miss re-read and re-resolved every entry, which made startup quadratic in
@@ -210,7 +254,11 @@ fn desktop_index() -> std::sync::Arc<Vec<DesktopEntry>> {
                     .extension()
                     .is_some_and(|extension| extension == "desktop")
             })
-            .filter_map(|file| DesktopEntry::parse(&std::fs::read_to_string(file.path()).ok()?))
+            .filter_map(|file| {
+                let mut entry = DesktopEntry::parse(&std::fs::read_to_string(file.path()).ok()?)?;
+                entry.id = file.path().file_stem()?.to_string_lossy().into_owned();
+                Some(entry)
+            })
             .collect(),
     );
     *index = Some((Instant::now(), entries.clone()));
@@ -224,7 +272,13 @@ pub fn preview_application_processes() -> Vec<(String, String)> {
         let Some(app_name) = entry.name.clone() else {
             continue;
         };
-        let candidate = (entry.executable.to_string_lossy().into_owned(), app_name);
+        let candidate = (
+            match entry.executable.as_ref() {
+                Some(exe) => exe.to_string_lossy().into_owned(),
+                None => continue,
+            },
+            app_name,
+        );
         if candidates.contains(&candidate) || SystemIcons.icon(&candidate.0, &candidate.1).is_none()
         {
             continue;
@@ -256,11 +310,11 @@ struct SystemIcons;
 #[cfg(target_os = "linux")]
 impl IconProvider for SystemIcons {
     fn icon(&self, app: &str, app_name: &str) -> Option<IconData> {
-        let process = std::path::Path::new(app);
-        if !process.is_absolute() {
-            return None;
-        }
-        let icon = choose_entry_icon(&desktop_index(), process, app_name)?;
+        let entries = desktop_index();
+        let icon = named_entry(&entries, app_name)
+            .or_else(|| named_entry(&entries, app))
+            .and_then(|entry| entry.icon.clone())
+            .or_else(|| choose_entry_icon(&entries, std::path::Path::new(app), app_name))?;
         let path = if std::path::Path::new(&icon).is_absolute() {
             std::path::PathBuf::from(icon)
         } else {
@@ -522,6 +576,51 @@ mod pixel_tests {
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     #[test]
+    fn desktop_ids_and_steam_classes_have_names_and_icons_without_live_processes() {
+        let mut entry = super::DesktopEntry::parse(
+            "[Desktop Entry]\nName=Gwenview\nIcon=gwenview\nExec=/definitely/not/installed\nStartupWMClass=org.kde.gwenview"
+        ).unwrap();
+        entry.id = "org.kde.gwenview".into();
+        let entries = vec![entry];
+        let matched = super::named_entry(&entries, "org.kde.gwenview").unwrap();
+        assert_eq!(matched.name.as_deref(), Some("Gwenview"));
+        assert_eq!(matched.icon.as_deref(), Some("gwenview"));
+        assert!(super::named_entry(&entries, "org.kde.other").is_none());
+        let mut game = super::DesktopEntry::parse(
+            "[Desktop Entry]\nName=Game\nIcon=steam_icon_1449690\nExec=steam steam://rungameid/1449690"
+        ).unwrap();
+        game.id = "Game".into();
+        assert_eq!(
+            super::named_entry(&[game], "steam_app_1449690")
+                .unwrap()
+                .name
+                .as_deref(),
+            Some("Game")
+        );
+    }
+
+    #[test]
+    #[ignore = "requires the reported applications installed on Linux"]
+    fn reported_linux_applications_have_launcher_names_and_icons() {
+        use super::IconProvider;
+        for (id, expected) in [
+            ("org.kde.gwenview", "Gwenview"),
+            ("org.telegram.desktop", "Telegram"),
+            ("firefox", "Firefox"),
+            (
+                "steam_app_1449690",
+                "The Walking Dead: The Telltale Definitive Series",
+            ),
+        ] {
+            assert_eq!(super::application_name(id), expected);
+            assert!(
+                super::SystemIcons.icon(id, id).is_some(),
+                "missing icon for {id}"
+            );
+        }
+    }
+
+    #[test]
     #[ignore = "requires installed Linux applications and icon themes"]
     fn preview_processes_resolve_to_application_icons() {
         let apps = super::preview_application_processes();
@@ -569,7 +668,7 @@ mod tests {
         };
         let shown = super::DesktopEntry::parse(&entry("")).unwrap();
         assert!(shown.listed);
-        assert_eq!(shown.executable, exe.canonicalize().unwrap());
+        assert_eq!(shown.executable, Some(exe.canonicalize().unwrap()));
         assert_eq!(
             shown.icon_for(&exe.canonicalize().unwrap(), "App"),
             Some((100, "app".into()))

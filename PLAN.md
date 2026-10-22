@@ -354,6 +354,27 @@ Each milestone = one focused AI session. Do not start the next until the accepta
 - Keyboard shortcuts, "tag the last N minutes", compact mini window.
 - Documents: full file path where the OS/application exposes it.
 - Git repository and branch detection for terminals and IDEs.
+- **Freeform-style board + Scenes** (desktop): a freeform canvas ("board") where
+  notes, clips and shared items sit side by side. Save the current zoomed/scrolled
+  view as a named **scene** and jump back to it instantly — teleport between
+  sections of a large board instead of scrolling. Browse scenes in a navigator,
+  reorder them, and present them one at a time like a slideshow. The Android
+  companion (M13) shares into these boards.
+
+### M13 — Android companion: share-target inbox (later)
+
+A minimal Android app. Core feature: a share-target inbox, like Freeform's.
+
+- Register as an Android share target (`ACTION_SEND`), so any app — Pinterest, a
+  browser, a photo gallery — can share content to Draugr Time.
+- Shared items land in an **Inbox**. Links show a preview (title, thumbnail,
+  URL); images and text are kept as-is.
+- From the inbox, move each item onto a **board** (the M12 freeform canvas) and
+  organize/tag it later.
+- ✅ Sharing from another app lands the item in the inbox with a preview; items
+  move from the inbox to a board. Verified on a real Android device.
+- Open questions (decide when scheduling): how boards sync between desktop and
+  Android; what exactly is captured per share. See `docs/android.md`.
 
 ### Later
 Screenshots track (as in ManicTime), DB encryption, multi-device sync (CRDT or self-hosted server), MCP server on top of the local API, browser extensions (former M9), Linux Flatpak packaging (deferred from M11).

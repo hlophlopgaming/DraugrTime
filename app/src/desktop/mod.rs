@@ -64,6 +64,22 @@ fn open_url(url: &str) {
     }
 }
 
+fn cached_app_icon<'a, T>(icons: &'a HashMap<String, T>, app: &str, name: &str) -> Option<&'a T> {
+    icons
+        .get(&model::application_identity(app, name))
+        .or_else(|| {
+            if app != name {
+                return None;
+            }
+            let mut matches = icons.iter().filter(|(key, _)| {
+                key.split_once('\0')
+                    .is_some_and(|(_, candidate)| candidate == name)
+            });
+            let (_, icon) = matches.next()?;
+            matches.next().is_none().then_some(icon)
+        })
+}
+
 fn decode_icons(
     icons: HashMap<String, Option<crate::icons::IconData>>,
 ) -> HashMap<String, AppIcon> {
@@ -1244,8 +1260,7 @@ impl State {
         })
     }
     fn app_icon<'a>(&'a self, app: &str, app_name: &str) -> Element<'a, Message> {
-        let icon_key = model::application_identity(app, app_name);
-        match self.icons.get(&icon_key) {
+        match cached_app_icon(&self.icons, app, app_name) {
             Some(AppIcon::Png(handle)) => image(handle.clone()).width(20).height(20).into(),
             Some(AppIcon::Svg(handle)) => svg(handle.clone()).width(20).height(20).into(),
             None => {
@@ -2700,6 +2715,23 @@ mod about_tests {
             args.iter()
                 .any(|arg| arg == "https://github.com/hlophlopgaming/DraugrTime"),
             "{args:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod overview_icon_tests {
+    #[test]
+    fn overview_name_uses_the_icon_cached_under_process_and_name() {
+        let icons =
+            std::collections::HashMap::from([("/usr/bin/gwenview\0org.kde.gwenview".into(), 1)]);
+        assert_eq!(
+            super::cached_app_icon(&icons, "org.kde.gwenview", "org.kde.gwenview"),
+            Some(&1)
+        );
+        assert_eq!(
+            super::cached_app_icon(&icons, "/other", "org.kde.gwenview"),
+            None
         );
     }
 }

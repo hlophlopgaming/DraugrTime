@@ -391,7 +391,8 @@ pub fn tracks(events: &[Event], tags: &[Tag], ranges: &[TagRange], day: Range) -
                     .unwrap_or_else(|| process_label(app));
                 let title = event.data["title"].as_str().unwrap_or("Untitled window");
                 let identity = application_identity(app, app_name);
-                let mut segment = Segment::new(range, &identity, app_name);
+                let mut segment =
+                    Segment::new(range, &identity, &crate::icons::application_name(app_name));
                 segment.detail = title.into();
                 segment.app = Some(app.into());
                 segment.app_name = Some(app_name.into());

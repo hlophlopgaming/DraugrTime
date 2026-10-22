@@ -94,7 +94,8 @@ and [desktop usage](docs/desktop.md) for settings and platform notes.
 - [x] ~~**M9:** browser extension~~ — dropped: window titles already cover browser pages.
 - [x] **M10 — 1.0:** app icon everywhere, built-in CLI on Linux/macOS, first-run onboarding, minimal privacy settings.
 - [x] **M11 — 1.1:** installers: Windows installer + portable zip, Linux AppImage, macOS DMG (Flatpak deferred).
-- [ ] **M12:** design, backups, title masking, notes, shortcuts, file paths, Git branch detection.
+- [ ] **M12:** design, backups, title masking, notes, shortcuts, file paths, Git branch detection, Freeform-style scenes.
+- [ ] **M13:** Android companion with a share-target inbox (links with previews) and freeform boards.
 
 Details: [PLAN.md](PLAN.md) · [Architecture decisions](docs/decisions.md).
 

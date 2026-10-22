@@ -810,3 +810,14 @@ highlight, theme and date; canvas also invalidates on size changes.
   launched at login. Startup now prefers the persistent `$APPIMAGE` path (set by
   the AppImage runtime) and falls back to `current_exe()` otherwise, so the
   autostart `Exec=` targets the `.AppImage` file itself.
+
+## 2026-10-22 — Linux application labels and overview icons
+
+Resolve Linux presentation names and icons from the existing local desktop-entry
+index using desktop IDs, StartupWMClass and Steam launch URIs before falling back
+to executable matching. Keep raw identifiers in storage, filters and highlights:
+old history gains readable labels without rewriting events or changing totals.
+Retain entries whose Exec cannot currently be resolved, because historical apps
+and launcher wrappers can still provide names and icons. The overview resolves
+its name-only icon request against a unique cached process/name pair; ambiguous
+names retain the fallback rather than selecting another application's icon.
