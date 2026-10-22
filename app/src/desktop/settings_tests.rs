@@ -68,3 +68,27 @@ fn day_overview_preserves_tag_precedence_after_history_deletion() {
         serde_json::to_value(db.report(350, 500).unwrap()).unwrap()
     );
 }
+
+#[test]
+fn privacy_settings_save_masked_apps_next_to_exclusions() {
+    let folder = tempfile::tempdir().unwrap();
+    let path = folder.path().join("settings.json");
+    let mut ui = settings::Ui::default();
+    ui.edit_lists("secret", " Messenger ; messenger\n/opt/chat,app\n");
+    let preferences = ui.privacy_preferences().unwrap();
+    assert_eq!(preferences.excluded_apps, vec!["secret"]);
+    assert_eq!(preferences.masked_apps, vec!["Messenger", "/opt/chat,app"]);
+    preferences.save(&path).unwrap();
+    let loaded = draugr_time_daemon::preferences::Preferences::load(&path).unwrap();
+    assert_eq!(loaded.masked_apps, vec!["Messenger", "/opt/chat,app"]);
+    let window = draugr_time_watchers::WindowInfo {
+        app: "messenger".into(),
+        app_name: "Messenger".into(),
+        title: "Private chat".into(),
+        pid: None,
+    };
+    assert_eq!(
+        loaded.filter(Some(window)).unwrap().title,
+        draugr_time_daemon::preferences::MASKED_TITLE
+    );
+}

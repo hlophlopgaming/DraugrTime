@@ -78,6 +78,8 @@ and [desktop usage](docs/desktop.md) for settings and platform notes.
 
 - History is stored locally in SQLite. No account, cloud uploads or telemetry.
 - Application network traffic stays on localhost; compositor IPC stays local.
+- Settings → Privacy can exclude applications entirely or mask their window
+  titles: masked applications keep their time, but titles are stored as `[masked]`.
 - New installations use the OS local-data folder under `DraugrTime`. Existing
   installations can continue using their legacy `DagdaTime` folder.
 - Settings → Data folder selects another folder for the next launch; existing
@@ -94,7 +96,8 @@ and [desktop usage](docs/desktop.md) for settings and platform notes.
 - [x] ~~**M9:** browser extension~~ — dropped: window titles already cover browser pages.
 - [x] **M10 — 1.0:** app icon everywhere, built-in CLI on Linux/macOS, first-run onboarding, minimal privacy settings.
 - [x] **M11 — 1.1:** installers: Windows installer + portable zip, Linux AppImage, macOS DMG (Flatpak deferred).
-- [ ] **M12:** design, backups, title masking, notes, shortcuts, file paths, Git branch detection.
+- [x] **M11.1:** title masking for selected applications.
+- [ ] **M12:** design, backups, notes, shortcuts, file paths, Git branch detection.
 
 Details: [PLAN.md](PLAN.md) · [Architecture decisions](docs/decisions.md).
 

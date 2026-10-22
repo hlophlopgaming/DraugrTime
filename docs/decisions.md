@@ -824,3 +824,26 @@ highlight, theme and date; canvas also invalidates on size changes.
   only when it changed. Behaviour is unchanged.
 - **Day tracks.** `model::tracks` indexes tags by id and computes each tag path
   once per load, shared as `Arc<str>` between segments of the same tag.
+
+## 2026-10-22 — M11.1 title masking
+
+- **Where.** Masking lives in `Preferences::filter`, next to exclusions, so it
+  runs in the daemon before storage, rules and current-activity status, on
+  every platform and backend. Masking in each watcher or compositor bridge was
+  rejected: it would duplicate logic per platform and miss future backends.
+- **Matching.** A `masked_apps` list matched exactly like `excluded_apps`
+  (application ID or executable path, ASCII case insensitive), so both lists
+  behave the same in Settings. Title regexes were considered (awatcher does
+  this) but deferred; a per-app list matches PLAN §5.8.
+- **Placeholder.** One fixed, language-independent string, `[masked]`
+  (`preferences::MASKED_TITLE`), so stored data does not depend on the UI
+  language. Per-app placeholder text is not offered.
+- **Precedence.** If an application is both excluded and masked, exclusion wins
+  and nothing is stored.
+- **History.** Masking applies to new activity only; existing records are not
+  rewritten (users can delete a range if needed). The new field uses serde's
+  default, so older `settings.json` files load unchanged and no migration is
+  needed (preferences are a JSON file, not part of the SQLite schema).
+- Rules matching on title no longer match masked applications' titles; rules on
+  the application still work.
+
