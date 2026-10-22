@@ -25,7 +25,7 @@ def assemble_appdir(executable: Path, appdir: Path) -> None:
     desktop = ROOT / "packaging/org.draugrtime.app.desktop"
     shutil.copy2(desktop, appdir / "org.draugrtime.app.desktop")
     shutil.copy2(desktop, appdir / "usr/share/applications/org.draugrtime.app.desktop")
-    icon = ROOT / "logo/blackDraugr128.png"
+    icon = ROOT / "logo/appIcon128.png"
     shutil.copy2(icon, appdir / "org.draugrtime.app.png")
     shutil.copy2(icon, appdir / "usr/share/icons/hicolor/128x128/apps/org.draugrtime.app.png")
 

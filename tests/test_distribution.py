@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class DistributionTests(unittest.TestCase):
     def test_native_icons_wrap_the_existing_png(self):
-        png = (ROOT / 'logo/blackDraugr128.png').read_bytes()
+        png = (ROOT / 'logo/appIcon128.png').read_bytes()
         ico = (ROOT / 'logo/draugr-time.ico').read_bytes()
         self.assertEqual(struct.unpack('<HHH', ico[:6]), (0, 1, 1))
         self.assertEqual(ico[22:], png)
@@ -73,3 +73,11 @@ class DistributionTests(unittest.TestCase):
                          'Assemble macOS DMG', 'Draugr-Time-Setup.exe',
                          'Draugr-Time-x86_64.AppImage', 'Draugr-Time-macOS.dmg'):
             self.assertIn(required, workflow)
+
+    def test_linux_release_archive_uses_the_app_icon(self):
+        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        self.assertIn(
+            'cp logo/appIcon128.png artifacts/Draugr-Time-Linux/icons/hicolor/128x128/apps/org.draugrtime.app.png',
+            workflow,
+        )
+        self.assertNotIn('cp logo/blackDraugr128.png', workflow)

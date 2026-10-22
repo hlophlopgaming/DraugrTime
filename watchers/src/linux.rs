@@ -86,8 +86,19 @@ impl X11Watcher {
     }
 }
 
+impl X11Watcher {
+    /// Errors for requests whose cookies were dropped unanswered (an early `?`
+    /// below, e.g. BadWindow when the focused window closes between requests) are
+    /// delivered to the event queue. Nothing else reads it, so drain it each sample
+    /// or it grows for the life of the process.
+    fn drain_events(&self) {
+        while let Ok(Some(_)) = self.connection.poll_for_event() {}
+    }
+}
+
 impl WindowWatcher for X11Watcher {
     fn active_window(&self) -> Result<Option<WindowInfo>, WatcherError> {
+        self.drain_events();
         let property = self.property(self.root, self.active, AtomEnum::WINDOW.into())?;
         let Some(window) = property
             .value32()

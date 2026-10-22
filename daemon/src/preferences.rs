@@ -1,11 +1,20 @@
 use serde::{Deserialize, Serialize};
 use std::{io, path::Path};
 
+/// Stored in place of the real window title for applications in
+/// [`Preferences::masked_apps`]. Fixed and language-independent so stored data
+/// stays stable when the UI language changes.
+pub const MASKED_TITLE: &str = "[masked]";
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Preferences {
     pub onboarded: bool,
     pub excluded_apps: Vec<String>,
+    /// Applications whose time is recorded but whose window titles are
+    /// replaced with [`MASKED_TITLE`] before storage. Matched like
+    /// `excluded_apps`; exclusion wins when an app is in both lists.
+    pub masked_apps: Vec<String>,
     pub schedule: Option<RecordingSchedule>,
 }
 impl Preferences {
@@ -47,13 +56,13 @@ impl Preferences {
         &self,
         window: Option<draugr_time_watchers::WindowInfo>,
     ) -> Option<draugr_time_watchers::WindowInfo> {
-        let window = window?;
-        if self
-            .excluded_apps
-            .iter()
-            .any(|app| app.eq_ignore_ascii_case(&window.app))
-        {
+        let mut window = window?;
+        let listed = |apps: &[String]| apps.iter().any(|app| app.eq_ignore_ascii_case(&window.app));
+        if listed(&self.excluded_apps) {
             return None;
+        }
+        if listed(&self.masked_apps) {
+            window.title = MASKED_TITLE.to_owned();
         }
         Some(window)
     }
@@ -85,6 +94,13 @@ mod tests {
         };
         assert!(prefs.filter(window("secret")).is_none());
         assert_eq!(prefs.filter(window("editor")).unwrap().title, "private");
+        let mut prefs = prefs;
+        prefs.masked_apps.push("Editor".into());
+        let masked = prefs.filter(window("editor")).unwrap();
+        assert_eq!(
+            (masked.app.as_str(), masked.title.as_str()),
+            ("editor", MASKED_TITLE)
+        );
         std::fs::write(&path, "broken").unwrap();
         assert!(Preferences::load(&path).is_err());
     }

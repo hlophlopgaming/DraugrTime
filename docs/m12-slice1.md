@@ -82,3 +82,33 @@ these captures.
 - macOS: repeat at Retina scale, check system appearance and menu-bar
   close/reopen, and ensure F6 is delivered (Fn may be needed with media keys).
   No macOS runtime was available here.
+
+
+## 2026-10-23 — PR #13 integration
+
+Reviewed the brand refresh in
+[PR #13](https://github.com/hlophlopgaming/DraugrTime/pull/13).
+Fixed Rust formatting that blocked CI, and the portable Linux release archive
+still copying the old black mark instead of `appIcon128.png`; added a failing
+packaging regression test before correcting the workflow. Verified all nine
+regenerated assets match the bundled files. Removed an unused Python import.
+
+Local combined M12 + PR checks: `cargo fmt --check` passed,
+`cargo clippy --all-targets -- -D warnings` passed, `cargo test` passed
+(228 tests, 0 failures, 9 environment-dependent checks ignored), and
+`python3 -m unittest discover -s tests` passed (11 tests).
+The local M12 commit is retained separately from the reviewed PR, along with
+the existing Linux app-label/icon changes and Android/Scenes roadmap.
+
+PR CI [run 110](https://github.com/hlophlopgaming/DraugrTime/actions/runs/39854805153)
+passed on Linux, Windows and macOS, including native launch and installer
+assembly. PR #13 was merged as `731f767cd083bb7adb3732ac537f0043ca1054a5`.
+Real desktop-panel appearance, Windows/macOS DPI/theme behavior and manual
+tray interaction remain the platform checks listed above.
+
+All four screenshots above were refreshed after integrating the new brand.
+Native Wayland fixture runs rendered 5,000 events, with maximum geometry build
+between 1.68 and 1.96 ms in this run. The first light/narrow capture timed out;
+an isolated retry exited successfully and produced the final 640×820 PNG.
+This repeats the local capture/lifecycle limitation already noted above and
+was not reproduced by the PR's cross-platform native-launch CI.

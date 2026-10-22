@@ -811,6 +811,59 @@ highlight, theme and date; canvas also invalidates on size changes.
   the AppImage runtime) and falls back to `current_exe()` otherwise, so the
   autostart `Exec=` targets the `.AppImage` file itself.
 
+## 2026-10-22 — Release profile and lighter tracker tick
+
+- **Release profile.** `[profile.release]` now uses `lto = "fat"`,
+  `codegen-units = 1` and `strip = true` for smaller shipped binaries and
+  cross-crate inlining, at the cost of longer release builds in CI.
+  `panic` stays `unwind`: the daemon turns a panicked API thread into an error
+  through `JoinHandle::join`, which `abort` would replace with a crash.
+- **Tracker tick.** The worker reads the sampling gate (asleep, locked, paused)
+  under the control lock instead of cloning the whole `Status`, keeps one status
+  copy per tick for tray change detection, and writes `computer_capabilities`
+  only when it changed. Behaviour is unchanged.
+- **Day tracks.** `model::tracks` indexes tags by id and computes each tag path
+  once per load, shared as `Arc<str>` between segments of the same tag.
+
+## 2026-10-22 — M11.1 title masking
+
+- **Where.** Masking lives in `Preferences::filter`, next to exclusions, so it
+  runs in the daemon before storage, rules and current-activity status, on
+  every platform and backend. Masking in each watcher or compositor bridge was
+  rejected: it would duplicate logic per platform and miss future backends.
+- **Matching.** A `masked_apps` list matched exactly like `excluded_apps`
+  (application ID or executable path, ASCII case insensitive), so both lists
+  behave the same in Settings. Title regexes were considered (awatcher does
+  this) but deferred; a per-app list matches PLAN §5.8.
+- **Placeholder.** One fixed, language-independent string, `[masked]`
+  (`preferences::MASKED_TITLE`), so stored data does not depend on the UI
+  language. Per-app placeholder text is not offered.
+- **Precedence.** If an application is both excluded and masked, exclusion wins
+  and nothing is stored.
+- **History.** Masking applies to new activity only; existing records are not
+  rewritten (users can delete a range if needed). The new field uses serde's
+  default, so older `settings.json` files load unchanged and no migration is
+  needed (preferences are a JSON file, not part of the SQLite schema).
+- Rules matching on title no longer match masked applications' titles; rules on
+  the application still work.
+
+## 2026-10-22 — Timed pauses only; ActivityWatch categories; Git branch deferred
+
+- **No indefinite pause in the UI.** The tray and the window offer only
+  "Don't track for…" 5 / 10 / 15 / 30 / 60 min, and recording resumes by
+  itself. Reason: users forget to resume and silently lose history. The
+  recording schedule and excluded apps cover longer breaks; the localhost API
+  and CLI may keep an open-ended pause for scripts.
+- **Recording starts when the app opens**, and the first launch asks once
+  whether to enable autostart, because tracking only works while the app runs.
+- **ActivityWatch interoperability for tags goes through categories.**
+  ActivityWatch has no manual tag ranges; its categories (hierarchical name,
+  regex, color) map to Draugr Time tags plus auto-tagging rules, in both
+  directions. Manual tag ranges are not exported to ActivityWatch.
+- **Git repository/branch detection moved from M12 to Later.** The app is not
+  aimed at programmers and full file paths cover most of the need; revisit for
+  2.0 only on user demand.
+
 ## 2026-10-22 — Linux application labels and overview icons
 
 Resolve Linux presentation names and icons from the existing local desktop-entry

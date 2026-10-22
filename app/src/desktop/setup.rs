@@ -103,7 +103,7 @@ fn write_desktop(root: &Path, executable: &Path) -> Result<(), String> {
     std::fs::create_dir_all(&icons).map_err(|e| e.to_string())?;
     std::fs::write(
         icons.join("org.draugrtime.app.png"),
-        include_bytes!("../../../logo/blackDraugr128.png"),
+        include_bytes!("../../../logo/appIcon128.png"),
     )
     .map_err(|e| e.to_string())?;
     std::fs::write(applications.join("org.draugrtime.app.desktop"),format!("[Desktop Entry]\nType=Application\nName=Draugr Time\nComment=Private local activity tracking\nExec=\"{escaped}\"\nIcon=org.draugrtime.app\nTerminal=false\nCategories=Office;\nStartupWMClass=org.draugrtime.app\n")).map_err(|e|e.to_string())
