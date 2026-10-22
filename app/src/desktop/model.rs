@@ -266,18 +266,24 @@ pub fn empty_tracks() -> Vec<Track> {
 }
 pub fn tracks(events: &[Event], tags: &[Tag], ranges: &[TagRange], day: Range) -> Vec<Track> {
     let mut result = empty_tracks();
+    // Index tags once: a day can hold many ranges, and each needs its tag and path.
+    let by_id: std::collections::HashMap<i64, &Tag> = tags.iter().map(|t| (t.id, t)).collect();
+    let mut paths: std::collections::HashMap<i64, Arc<str>> = std::collections::HashMap::new();
     for value in ranges {
         let tag_id = value.tag_id;
         let original_range = Range::new(value.start_ts, value.end_ts);
         let Some(range) = clip(original_range, day) else {
             continue;
         };
-        let tag = tags.iter().find(|tag| tag.id == tag_id);
+        let tag = by_id.get(&tag_id).copied();
         let name = tag.map(|t| t.name.as_str()).unwrap_or("Unknown tag");
         let mut segment = Segment::new(range, &tag_id.to_string(), name);
         segment.tag_record = Some((value.id, original_range));
         segment.tag_precedence = value.precedence_id;
-        segment.label = tag_path(tags, tag_id).into();
+        segment.label = paths
+            .entry(tag_id)
+            .or_insert_with(|| tag_path(tags, tag_id).into())
+            .clone();
         segment.detail = value.note.as_deref().unwrap_or_default().into();
         if let Some(hex) = tag
             .and_then(|tag| tag.color.as_deref())

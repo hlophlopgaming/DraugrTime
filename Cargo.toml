@@ -10,3 +10,12 @@ license = "GPL-3.0-only"
 [workspace.dependencies]
 draugr-time-core = { path = "core" }
 draugr-time-watchers = { path = "watchers" }
+
+# Release builds ship to users: whole-program LTO and a single codegen unit
+# shrink the binary and let the optimizer inline across crates; strip drops
+# debug symbols from the shipped executables. panic stays "unwind" because the
+# daemon reports a panicked API thread through JoinHandle::join.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
