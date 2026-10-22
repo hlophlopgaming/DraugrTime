@@ -356,7 +356,14 @@ Each milestone = one focused AI session. Do not start the next until the accepta
 - ✅ Tests: masked titles never reach storage or status while time is kept; exclusion wins over masking; other apps keep titles; the list persists and older settings files load.
 
 ### M12 — After 1.1 (no fixed dates)
-- Design improvements.
+- **Design improvements per [`docs/design.md`](docs/design.md)** (dark and light themes, motion spec, mockups). Do it in slices, one per session, in this order:
+  1. Theme tokens (`Palette` dark/light), local fonts, layout shell (rail with REC under Settings, main column, right panel, narrow-window behaviour).
+  2. Day view: summary strip, spaced timeline tracks with two-line labels, collapsible Applications/Documents swimlanes, hover tooltips, selection action bar, full-width 00–24 "Activity by hour", "Whole day" panel with Apps/Docs/Tags tabs, filter and highlight-on-timeline.
+  3. Week view: seven two-lane day rows, timesheet, "This week" panel.
+  4. Tags and Rules screens: tree table + tag editor; ordered rule list + editor with live preview.
+  5. Settings sections, tray right-click menu, first-launch autostart dialog.
+  6. Motion pass: animations from the Motion table, reduced-motion support.
+  - ✅ Each slice: both themes match the mockups at 1280×820 and stay usable at narrow width; text contrast ≥ 4.5:1; keyboard access and focus rings; no idle ticking or CPU/memory regression (`docs/desktop-memory.md`); Day view smooth with 5 000+ fixture events; screenshots of both themes added under `docs/screenshots/`.
 - Backups: back up now and automatic backups.
 - Notes on tagged ranges.
 - Keyboard shortcuts, "tag the last N minutes", compact mini window.
