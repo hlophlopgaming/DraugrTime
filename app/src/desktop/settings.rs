@@ -15,6 +15,7 @@ pub enum Edit {
     #[cfg(target_os = "macos")]
     Permissions,
     Excluded(String),
+    Masked(String),
     Schedule(bool),
     Weekdays(bool),
     Start(String),
@@ -29,6 +30,7 @@ pub struct Ui {
     pub preferences: Preferences,
     pub step: usize,
     excluded: String,
+    masked: String,
     schedule: bool,
     weekdays: bool,
     start: String,
@@ -43,6 +45,7 @@ impl Default for Ui {
             preferences: Preferences::default(),
             step: 0,
             excluded: String::new(),
+            masked: String::new(),
             schedule: false,
             weekdays: true,
             start: "09:00".into(),
@@ -98,6 +101,7 @@ impl Ui {
             Ok(preferences) => {
                 let mut ui = Self {
                     excluded: preferences.excluded_apps.join("; "),
+                    masked: preferences.masked_apps.join("; "),
                     ..Self::default()
                 };
                 if let Some(schedule) = &preferences.schedule {
@@ -122,6 +126,35 @@ impl Ui {
                 ..Self::default()
             },
         }
+    }
+    #[cfg(test)]
+    pub fn edit_lists(&mut self, excluded: &str, masked: &str) {
+        self.excluded = excluded.to_owned();
+        self.masked = masked.to_owned();
+    }
+    /// Preferences as they would be saved from the Privacy page's fields.
+    pub fn privacy_preferences(&self) -> Result<Preferences, String> {
+        let mut preferences = self.preferences.clone();
+        preferences.excluded_apps = app_list(&self.excluded);
+        preferences.masked_apps = app_list(&self.masked);
+        preferences.schedule = if self.schedule {
+            let (start, end) = (minute(&self.start)?, minute(&self.end)?);
+            if end <= start {
+                return Err(tr("Use HH:MM times; the end must follow the start."));
+            }
+            Some(RecordingSchedule {
+                weekdays: if self.weekdays {
+                    vec![1, 2, 3, 4, 5]
+                } else {
+                    vec![1, 2, 3, 4, 5, 6, 7]
+                },
+                start_minute: start,
+                end_minute: end,
+            })
+        } else {
+            None
+        };
+        Ok(preferences)
     }
     pub fn advance(&mut self, path: &Path) -> Result<(), String> {
         if self.step == 0 {
@@ -150,27 +183,20 @@ impl State {
                 Err(error) => ui.message=error,
             },
             Edit::Excluded(value) => ui.excluded=value,
+            Edit::Masked(value) => ui.masked=value,
             Edit::Schedule(value) => ui.schedule=value,
             Edit::Weekdays(value) => ui.weekdays=value,
             Edit::Start(value) => ui.start=value,
             Edit::End(value) => ui.end=value,
             Edit::Save => {
-                let mut preferences=ui.preferences.clone();
-                preferences.excluded_apps=app_list(&ui.excluded);
-                let schedule=(|| -> Result<Option<RecordingSchedule>,String> {
-                    if !ui.schedule {return Ok(None);}
-                    let (start,end)=(minute(&ui.start)?,minute(&ui.end)?);
-                    if end<=start { return Err(tr("Use HH:MM times; the end must follow the start.")); }
-                    Ok(Some(RecordingSchedule {weekdays:if ui.weekdays {vec![1,2,3,4,5]}else{vec![1,2,3,4,5,6,7]},start_minute:start,end_minute:end}))
-                })();
-                match schedule.and_then(|schedule| {preferences.schedule=schedule;path().and_then(|path|preferences.save(&path).map_err(|e|e.to_string()))}) {
-                    Ok(()) => {
+                match ui.privacy_preferences().and_then(|preferences| path().and_then(|path|preferences.save(&path).map_err(|e|e.to_string())).map(|()|preferences)) {
+                    Ok(preferences) => {
                         ui.preferences=preferences.clone();
                         if let Some(runtime)=&self.runtime {
                             *runtime.shared.preferences.lock().unwrap()=preferences;
                             runtime.shared.control.lock().unwrap().status.current_window=None;
                         }
-                        ui.message=tr("Settings saved. Exclusions apply to new activity.");
+                        ui.message=tr("Settings saved. Exclusions and masking apply to new activity.");
                     }
                     Err(error) => ui.message=error,
                 }
@@ -252,7 +278,7 @@ impl State {
     }
     pub(super) fn privacy_settings(&self) -> Element<'_, Message> {
         let ui = &self.settings_ui;
-        let mut body=column![text(tr("Privacy")).size(22),text(tr("Excluded application IDs or executable paths, separated by semicolons. Excluded applications and titles are never recorded; active/away totals remain.")),text_input(&tr("Excluded applications"),&ui.excluded).on_input(|s|Message::Settings(Edit::Excluded(s))),checkbox(ui.schedule).label(tr("Recording schedule (local time)")).on_toggle(|v|Message::Settings(Edit::Schedule(v))),checkbox(ui.weekdays).label(tr("Weekdays only (otherwise every day)")).on_toggle(|v|Message::Settings(Edit::Weekdays(v))),row![text_input("09:00",&ui.start).on_input(|s|Message::Settings(Edit::Start(s))),text("–"),text_input("19:00",&ui.end).on_input(|s|Message::Settings(Edit::End(s)))].spacing(10),text(tr("Outside the schedule, recording pauses. Disable the schedule to resume outside its hours.")),button(text(tr("Save privacy settings"))).on_press(Message::Settings(Edit::Save)),text(tr("Delete the Day selection, or the displayed day if nothing is selected. History outside the range is preserved.")),button(text(tr("Delete selected history…"))).on_press_maybe((!ui.busy).then_some(Message::Settings(Edit::Delete)))].spacing(10);
+        let mut body=column![text(tr("Privacy")).size(22),text(tr("Excluded application IDs or executable paths, separated by semicolons. Excluded applications and titles are never recorded; active/away totals remain.")),text_input(&tr("Excluded applications"),&ui.excluded).on_input(|s|Message::Settings(Edit::Excluded(s))),text(tr("Masked application IDs or executable paths, separated by semicolons. Their time is recorded, but window titles are stored as [masked]. Exclusion wins if an app is in both lists.")),text_input(&tr("Masked applications"),&ui.masked).on_input(|s|Message::Settings(Edit::Masked(s))),checkbox(ui.schedule).label(tr("Recording schedule (local time)")).on_toggle(|v|Message::Settings(Edit::Schedule(v))),checkbox(ui.weekdays).label(tr("Weekdays only (otherwise every day)")).on_toggle(|v|Message::Settings(Edit::Weekdays(v))),row![text_input("09:00",&ui.start).on_input(|s|Message::Settings(Edit::Start(s))),text("–"),text_input("19:00",&ui.end).on_input(|s|Message::Settings(Edit::End(s)))].spacing(10),text(tr("Outside the schedule, recording pauses. Disable the schedule to resume outside its hours.")),button(text(tr("Save privacy settings"))).on_press(Message::Settings(Edit::Save)),text(tr("Delete the Day selection, or the displayed day if nothing is selected. History outside the range is preserved.")),button(text(tr("Delete selected history…"))).on_press_maybe((!ui.busy).then_some(Message::Settings(Edit::Delete)))].spacing(10);
         if let Some(range) = ui.deleting {
             let label = |ts| {
                 chrono::DateTime::from_timestamp_millis(ts)

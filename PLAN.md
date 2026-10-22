@@ -346,10 +346,15 @@ Each milestone = one focused AI session. Do not start the next until the accepta
 - Release CI builds and attaches every installer.
 - ✅ Fresh install on each OS goes through onboarding to a working Day view without touching a terminal; uninstall leaves history in place unless the user deletes it.
 
+### M11.1 — Title masking
+- Settings → Privacy gains a **Masked applications** list next to Excluded apps (§5.8). Same matching as exclusions: exact application IDs or executable paths, semicolon-separated, ASCII case insensitive.
+- Time for a masked application is recorded as usual, but its window title is replaced with the fixed placeholder `[masked]` in the daemon before it reaches storage, rules or current-activity status. Exclusion wins when an application is in both lists.
+- Applies to new activity only; existing history is not rewritten. Settings files without the new list keep loading.
+- ✅ Tests: masked titles never reach storage or status while time is kept; exclusion wins over masking; other apps keep titles; the list persists and older settings files load.
+
 ### M12 — After 1.1 (no fixed dates)
 - Design improvements.
 - Backups: back up now and automatic backups.
-- Title masking for selected applications.
 - Notes on tagged ranges.
 - Keyboard shortcuts, "tag the last N minutes", compact mini window.
 - Documents: full file path where the OS/application exposes it.
