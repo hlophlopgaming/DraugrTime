@@ -73,3 +73,11 @@ class DistributionTests(unittest.TestCase):
                          'Assemble macOS DMG', 'Draugr-Time-Setup.exe',
                          'Draugr-Time-x86_64.AppImage', 'Draugr-Time-macOS.dmg'):
             self.assertIn(required, workflow)
+
+    def test_linux_release_archive_uses_the_app_icon(self):
+        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        self.assertIn(
+            'cp logo/appIcon128.png artifacts/Draugr-Time-Linux/icons/hicolor/128x128/apps/org.draugrtime.app.png',
+            workflow,
+        )
+        self.assertNotIn('cp logo/blackDraugr128.png', workflow)

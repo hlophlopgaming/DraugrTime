@@ -16,11 +16,7 @@ fn tray_preserves_glyph_alpha_and_state_colors() {
         .unwrap()
         .into_rgba8();
     assert_eq!(mask.dimensions(), (32, 32));
-    for color in [
-        TRAY_RECORDING,
-        TRAY_NOT_RECORDING,
-        [130, 145, 160],
-    ] {
+    for color in [TRAY_RECORDING, TRAY_NOT_RECORDING, [130, 145, 160]] {
         let rgba = tray_rgba(color);
         assert_eq!(rgba.len(), 32 * 32 * 4);
         assert!(

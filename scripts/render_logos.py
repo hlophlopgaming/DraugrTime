@@ -12,7 +12,6 @@ PNGs always match. Edit the geometry here, never the generated files.
 from __future__ import annotations
 
 import io
-import math
 import struct
 from pathlib import Path
 
