@@ -357,7 +357,7 @@ Each milestone = one focused AI session. Do not start the next until the accepta
 
 ### M12 — After 1.1 (no fixed dates)
 - **Design improvements per [`docs/design.md`](docs/design.md)** (dark and light themes, motion spec, mockups). Do it in slices, one per session, in this order:
-  1. Theme tokens (`Palette` dark/light), local fonts, layout shell (rail with REC under Settings, main column, right panel, narrow-window behaviour).
+  1. Theme tokens (`Palette` dark/light), local fonts, shared components (docs/design.md → Components), layout shell (rail with REC under Settings, main column, right panel, narrow-window behaviour), and removing/relocating the old controls listed in “What moves or disappears”.
   2. Day view: summary strip, spaced timeline tracks with two-line labels, collapsible Applications/Documents swimlanes, hover tooltips, selection action bar, full-width 00–24 "Activity by hour", "Whole day" panel with Apps/Docs/Tags tabs, filter and highlight-on-timeline.
   3. Week view: seven two-lane day rows, timesheet, "This week" panel.
   4. Tags and Rules screens: tree table + tag editor; ordered rule list + editor with live preview.
