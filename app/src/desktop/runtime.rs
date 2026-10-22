@@ -306,7 +306,7 @@ impl Sampler {
             || status.computer.locked == Some(true)
             || paused && !status.paused_until.is_some_and(|until| until <= now)
     }
-    #[cfg(all(test, target_os = "linux"))]
+    #[cfg(test)]
     fn sample(&mut self, status: &draugr_time_daemon::Status, paused: bool) -> MockWatcher {
         self.sample_blocked(Self::blocked(status, paused, now_ms()))
     }
