@@ -11,15 +11,14 @@ fn theme_logos_use_original_assets_with_identical_visible_shapes() {
     assert!(window_icon().is_ok());
 }
 #[test]
-fn tray_preserves_crown_alpha_and_state_colors() {
-    let crown = image::load_from_memory(include_bytes!("../../logo/whiteCrown128.png"))
+fn tray_preserves_glyph_alpha_and_state_colors() {
+    let mask = image::load_from_memory(include_bytes!("../../logo/tray32.png"))
         .unwrap()
         .into_rgba8();
-    let mask = image::imageops::resize(&crown, 32, 32, image::imageops::FilterType::Nearest);
+    assert_eq!(mask.dimensions(), (32, 32));
     for color in [
-        [56, 162, 128],
-        [217, 165, 56],
-        [208, 83, 83],
+        TRAY_RECORDING,
+        TRAY_NOT_RECORDING,
         [130, 145, 160],
     ] {
         let rgba = tray_rgba(color);

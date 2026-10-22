@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class DistributionTests(unittest.TestCase):
     def test_native_icons_wrap_the_existing_png(self):
-        png = (ROOT / 'logo/blackDraugr128.png').read_bytes()
+        png = (ROOT / 'logo/appIcon128.png').read_bytes()
         ico = (ROOT / 'logo/draugr-time.ico').read_bytes()
         self.assertEqual(struct.unpack('<HHH', ico[:6]), (0, 1, 1))
         self.assertEqual(ico[22:], png)
