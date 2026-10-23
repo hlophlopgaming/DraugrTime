@@ -697,7 +697,7 @@ impl State {
             always: self.lifecycle || self.benchmark || cfg!(target_os = "macos"),
             window_open: self.window.is_some(),
             window_diagnostics: self.smoke || self.runtime_test,
-            can_load: !self.fixture && self.runtime.is_some(),
+            can_load: !self.fixture && self.runtime.is_some() && self.motion_visible,
             day_loaded: self.loaded_day == Some(self.day),
             live_day: self.day.start <= now && now < self.day.end,
             on_day_screen: self.screen == "Day",
@@ -790,6 +790,7 @@ impl State {
             }
             Message::MotionRefresh => {
                 self.motion_visible = true;
+                self.last_load = Instant::now() - Duration::from_secs(5);
                 return motion::read_preference();
             }
             Message::MotionUnfocused => {
@@ -1009,7 +1010,12 @@ impl State {
                 // Only today's history still changes; a past day is loaded once.
                 let stale = self.loaded_day != Some(self.day)
                     || (today && self.last_load.elapsed() > Duration::from_secs(2));
-                if !self.fixture && !self.loading && stale && self.window.is_some() {
+                if !self.fixture
+                    && !self.loading
+                    && stale
+                    && self.window.is_some()
+                    && self.motion_visible
+                {
                     self.finish_motion();
                     if let Some(runtime) = self.runtime.as_ref() {
                         let day = self.day;
@@ -2682,6 +2688,7 @@ mod tick_tests {
     fn recording_state() -> State {
         let (mut state, _) = State::boot();
         state.window = Some(window::Id::unique());
+        state.motion_visible = true;
         state.fixture = false;
         state.runtime = Some(Runtime::for_test(draugr_time_daemon::Shared::new(
             draugr_time_core::Storage::open_in_memory().unwrap(),
@@ -2689,6 +2696,32 @@ mod tick_tests {
             300,
         )));
         state
+    }
+
+    #[test]
+    fn unfocused_window_stops_history_loads_and_resumes_on_focus() {
+        let mut state = recording_state();
+        state.loaded_day = Some(state.day);
+        let _ = state.update(Message::MotionUnfocused);
+        assert_eq!(
+            state.tick_demand().needed(),
+            cfg!(target_os = "macos"),
+            "unfocused UI must stop ticking except for macOS main-thread sampling"
+        );
+        for _ in 0..7200 {
+            let task = state.update(Message::Tick);
+            assert!(
+                task.units() == 0,
+                "queued ticks must not load hidden history"
+            );
+            assert!(!state.loading);
+        }
+        state.last_load = Instant::now();
+        let _ = state.update(Message::MotionRefresh);
+        assert!(state.tick_demand().needed());
+        let task = state.update(Message::Tick);
+        assert!(task.units() > 0);
+        assert!(state.loading);
     }
 
     #[test]

@@ -1062,3 +1062,16 @@ Settings, tray, autostart and animations remain later slices.
   rather than an old/new cross-fade. Existing platform menus/pick-list internals keep
   their toolkit behaviour. Native lifecycle, accessibility-setting propagation and
   idle CPU/PSS still need real-desktop verification.
+
+## 2026-10-23 — Suspend live history refresh while unfocused
+
+Gate both the history timer demand and the load dispatch on the existing window
+focus state (`motion_visible`). An existing window ID alone does not mean its
+contents are visible: minimizing previously kept loading and rebuilding the day
+every few seconds. Iced does not expose a portable minimized event, and querying
+minimized state is unsupported on Wayland, so visible unfocused windows also
+pause live history refresh. Focus makes the next load immediately eligible while
+preserving the incremental cursor, editing state and undo. One already-running
+load may complete after focus loss. Background recording and tray updates remain
+independent; macOS retains its main-thread sampling timer, but cannot dispatch
+history loads while unfocused. No polling timer or platform dependency is added.

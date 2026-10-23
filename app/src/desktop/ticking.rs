@@ -3,7 +3,7 @@
 //! Linux and Windows sample activity on a background worker that pushes status
 //! changes to the GUI (`tray::Event::Status`), so an open window only needs the
 //! timer to load history: once for a newly shown day, and repeatedly while the
-//! Day screen shows a day that is still being recorded. Everything else wakes
+//! focused Day screen shows a day that is still being recorded. Everything else wakes
 //! the GUI through messages. macOS samples on the main thread and always ticks;
 //! diagnostic launch modes keep ticking because they drive their checks from it.
 
@@ -14,7 +14,7 @@ pub(super) struct TickDemand {
     pub window_open: bool,
     /// Smoke/runtime/onboarding checks that run while a window is open.
     pub window_diagnostics: bool,
-    /// Recorded history can be loaded: a runtime exists and this is not a fixture.
+    /// History can be loaded: a focused window, a runtime and no fixture.
     pub can_load: bool,
     /// The shown day's history has been loaded at least once.
     pub day_loaded: bool,

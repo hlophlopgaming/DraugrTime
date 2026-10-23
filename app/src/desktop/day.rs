@@ -330,6 +330,8 @@ impl State {
                                     model::duration(lane.duration)
                                 ))
                                 .size(design::LABEL)
+                                .wrapping(iced::widget::text::Wrapping::None)
+                                .width(Length::Fill)
                             ]
                             .spacing(design::SMALL_GAP)
                             .align_y(Alignment::Center)
@@ -791,6 +793,9 @@ impl State {
                 ..iced::Padding::ZERO
             }),
             scrollable(rows)
+                .direction(scrollable::Direction::Vertical(
+                    scrollable::Scrollbar::default().spacing(design::CONTROL_GAP),
+                ))
                 .style(design::scrollbars)
                 .height(Length::Fill),
             container(

@@ -223,3 +223,27 @@ zero regression nor successful native teardown is claimed. The previous Wayland 
 remain unresolved. Live editor previews retain the pre-existing 100,000-event cap and
 synchronous recalculation. Full metadata refresh scans tag history and computes coverage
 per enabled rule, so very large histories need separate responsiveness measurements.
+
+## 2026-10-23 — Minimized-window history refresh
+
+Losing focus now stops live history refresh as well as animations. Previously a
+minimized window retained its window ID and continued loading/rebuilding history.
+The load dispatch also checks focus, covering queued ticks and macOS's required
+sampling timer. Focus re-enables loading without waiting for the previous refresh
+interval. Existing history stays available; one in-flight load may still complete.
+Visible unfocused windows use the same policy because Wayland does not provide a
+portable minimized-state query through Iced.
+
+Regression command:
+`cargo test -p draugr-time unfocused_window_stops_history_loads_and_resumes_on_focus`.
+It failed before the fix because history refresh remained enabled after focus
+loss, and passes after the fix. It delivers 7,200 queued ticks without starting
+history loads, then verifies that focus restores loading even after a recent load.
+This is a dispatch regression test, not a two-hour RSS/PSS measurement or proof of
+the reported 300 MiB allocation's provenance.
+
+Manual verification on Linux X11/Wayland, Windows and macOS: open today's Day
+screen, minimize for two hours while recording changing applications, and compare
+process memory before/after. Restore and verify the missing interval appears;
+repeat while a different window has focus. Confirm tray status and recording
+continue throughout. On Linux, compare `/proc/<pid>/smaps_rollup` PSS and RSS.
