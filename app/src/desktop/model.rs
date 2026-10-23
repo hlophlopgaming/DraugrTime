@@ -221,19 +221,8 @@ pub fn color(app: &str) -> [f32; 3] {
     let hash = app.chars().fold(2166136261u32, |hash, c| {
         (hash ^ c as u32).wrapping_mul(16777619)
     });
-    let h = (hash % 360) as f32 / 60.0;
-    let chroma = (1.0 - (2.0f32 * 0.56 - 1.0).abs()) * 0.48;
-    let x = chroma * (1.0 - (h % 2.0 - 1.0).abs());
-    let m = 0.56 - chroma / 2.0;
-    let rgb = match h as u32 {
-        0 => [chroma, x, 0.0],
-        1 => [x, chroma, 0.0],
-        2 => [0.0, chroma, x],
-        3 => [0.0, x, chroma],
-        4 => [x, 0.0, chroma],
-        _ => [chroma, 0.0, x],
-    };
-    rgb.map(|c| c + m)
+    super::design::CATEGORICAL[hash as usize % super::design::CATEGORICAL.len()]
+        .map(|c| f32::from(c) / 255.0)
 }
 pub fn day_bounds(date: NaiveDate) -> Range {
     let midnight = |date: NaiveDate| {

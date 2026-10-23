@@ -1,0 +1,214 @@
+{
+  "final_build_sha256": "bfc4da6d981481c25b4b90ed24884b1a8712d83ddb0d7d1d586554a08b044fbf",
+  "final_only": [
+    {
+      "version": "after",
+      "attempt": 1,
+      "samples": {
+        "4": {
+          "Rss_KiB": 50848,
+          "Pss_KiB": 46697,
+          "Private_Dirty_KiB": 32052,
+          "cpu_ticks": 143
+        },
+        "6": {
+          "Rss_KiB": 54952,
+          "Pss_KiB": 50801,
+          "Private_Dirty_KiB": 36156,
+          "cpu_ticks": 144
+        },
+        "9": {
+          "Rss_KiB": 25036,
+          "Pss_KiB": 20885,
+          "Private_Dirty_KiB": 6112,
+          "cpu_ticks": 147
+        },
+        "11": {
+          "Rss_KiB": 25036,
+          "Pss_KiB": 20885,
+          "Private_Dirty_KiB": 6112,
+          "cpu_ticks": 147
+        }
+      },
+      "exit_code": 0,
+      "output": "Iced benchmark: canvas build max 2.75 ms\n",
+      "open_idle_cpu_percent": 0.5,
+      "closed_idle_cpu_percent": 0.0
+    }
+  ],
+  "earlier_pair_with_capture": [
+    {
+      "version": "before",
+      "attempt": 1,
+      "samples": {
+        "4": {
+          "Rss_KiB": 49672,
+          "Pss_KiB": 45933,
+          "Private_Dirty_KiB": 45748,
+          "cpu_ticks": 192
+        },
+        "6": {
+          "Rss_KiB": 49672,
+          "Pss_KiB": 45933,
+          "Private_Dirty_KiB": 45748,
+          "cpu_ticks": 231
+        },
+        "9": {
+          "Rss_KiB": 23988,
+          "Pss_KiB": 20250,
+          "Private_Dirty_KiB": 20064,
+          "cpu_ticks": 233
+        },
+        "11": {
+          "Rss_KiB": 23988,
+          "Pss_KiB": 20250,
+          "Private_Dirty_KiB": 20064,
+          "cpu_ticks": 233
+        }
+      },
+      "exit_code": 0,
+      "output": "Iced benchmark: canvas build max 4.06 ms\n",
+      "open_idle_cpu_percent": 19.5,
+      "closed_idle_cpu_percent": 0.0
+    },
+    {
+      "version": "after",
+      "attempt": 1,
+      "samples": {
+        "4": {
+          "Rss_KiB": 50844,
+          "Pss_KiB": 46758,
+          "Private_Dirty_KiB": 32060,
+          "cpu_ticks": 164
+        },
+        "6": {
+          "Rss_KiB": 51480,
+          "Pss_KiB": 47394,
+          "Private_Dirty_KiB": 32696,
+          "cpu_ticks": 168
+        },
+        "9": {
+          "Rss_KiB": 24700,
+          "Pss_KiB": 20614,
+          "Private_Dirty_KiB": 5852,
+          "cpu_ticks": 170
+        },
+        "11": {
+          "Rss_KiB": 24700,
+          "Pss_KiB": 20614,
+          "Private_Dirty_KiB": 5852,
+          "cpu_ticks": 170
+        }
+      },
+      "exit_code": 0,
+      "output": "Iced benchmark: canvas build max 2.07 ms\n",
+      "open_idle_cpu_percent": 2.0,
+      "closed_idle_cpu_percent": 0.0
+    }
+  ],
+  "earlier_without_capture": [
+    {
+      "version": "before",
+      "attempt": 1,
+      "samples": {
+        "4": {
+          "Rss_KiB": 44152,
+          "Pss_KiB": 40504,
+          "Private_Dirty_KiB": 40364,
+          "cpu_ticks": 117
+        },
+        "6": {
+          "Rss_KiB": 45040,
+          "Pss_KiB": 41392,
+          "Private_Dirty_KiB": 41252,
+          "cpu_ticks": 119
+        },
+        "9": {
+          "Rss_KiB": 23612,
+          "Pss_KiB": 19964,
+          "Private_Dirty_KiB": 19824,
+          "cpu_ticks": 121
+        },
+        "11": {
+          "Rss_KiB": 23612,
+          "Pss_KiB": 19964,
+          "Private_Dirty_KiB": 19824,
+          "cpu_ticks": 121
+        }
+      },
+      "exit_code": 0,
+      "output": "Iced benchmark: canvas build max 0.07 ms\n",
+      "open_idle_cpu_percent": 1.0,
+      "closed_idle_cpu_percent": 0.0
+    },
+    {
+      "version": "after",
+      "attempt": 1,
+      "samples": {
+        "4": {
+          "Rss_KiB": 50292,
+          "Pss_KiB": 46357,
+          "Private_Dirty_KiB": 31776,
+          "cpu_ticks": 129
+        },
+        "6": {
+          "Rss_KiB": 50292,
+          "Pss_KiB": 46357,
+          "Private_Dirty_KiB": 31776,
+          "cpu_ticks": 132
+        },
+        "9": {
+          "Rss_KiB": 50292,
+          "Pss_KiB": 46357,
+          "Private_Dirty_KiB": 31776,
+          "cpu_ticks": 132
+        },
+        "11": {
+          "Rss_KiB": 50292,
+          "Pss_KiB": 46357,
+          "Private_Dirty_KiB": 31776,
+          "cpu_ticks": 132
+        }
+      },
+      "error": "Command '['/home/userreallyfun/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/GitHub/DagdaTime/target/release/draugr-time', '--benchmark', '--screen', 'Week', '--dark']' timed out after 20 seconds",
+      "output": ""
+    },
+    {
+      "version": "after",
+      "attempt": 2,
+      "samples": {
+        "4": {
+          "Rss_KiB": 49424,
+          "Pss_KiB": 45432,
+          "Private_Dirty_KiB": 30864,
+          "cpu_ticks": 132
+        },
+        "6": {
+          "Rss_KiB": 49424,
+          "Pss_KiB": 45432,
+          "Private_Dirty_KiB": 30864,
+          "cpu_ticks": 133
+        },
+        "9": {
+          "Rss_KiB": 49424,
+          "Pss_KiB": 45432,
+          "Private_Dirty_KiB": 30864,
+          "cpu_ticks": 135
+        },
+        "11": {
+          "Rss_KiB": 49424,
+          "Pss_KiB": 45432,
+          "Private_Dirty_KiB": 30864,
+          "cpu_ticks": 135
+        }
+      },
+      "error": "Command '['/home/userreallyfun/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/GitHub/DagdaTime/target/release/draugr-time', '--benchmark', '--screen', 'Week', '--dark']' timed out after 20 seconds",
+      "output": ""
+    }
+  ],
+  "notes": [
+    "Short diagnostics include benchmark ticking and a PNG capture, so open-window CPU is not an idle-CPU measurement.",
+    "The old fixture included future intervals; the final fixture clips them. Dataset sizes are not identical.",
+    "Two earlier no-output captures timed out. Final light/narrow wrote its PNG but did not finish automatic teardown within 30 seconds on either attempt."
+  ]
+}

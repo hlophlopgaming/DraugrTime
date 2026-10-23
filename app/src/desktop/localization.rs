@@ -210,7 +210,26 @@ pub fn duration_in(language: Language, ms: i64) -> String {
         format!("{seconds}{}", translate(language, "s"))
     }
 }
-pub fn date_label(date: chrono::NaiveDate) -> String {
+pub fn state(value: &str) -> String {
+    tr(match value {
+        "awake" => "Awake",
+        "asleep" => "Sleep",
+        "off" => "Off (OS evidence)",
+        "active" => "Active",
+        "away" => "AFK",
+        "recording" => "Tracking",
+        "paused" => "Paused",
+        "stopped" => "Tracker stopped",
+        "unobserved" => "Unobserved",
+        "unknown" => "Unknown",
+        "ok" => "Available",
+        "permission_missing" | "permission_required" => "Permission missing",
+        "unsupported" => "Unsupported",
+        _ => value,
+    })
+}
+
+pub fn short_date_label(date: chrono::NaiveDate) -> String {
     use chrono::Datelike;
     let weekday = [
         "Monday",
@@ -235,31 +254,10 @@ pub fn date_label(date: chrono::NaiveDate) -> String {
         "November",
         "December",
     ][date.month0() as usize];
-    message(
-        "{weekday}, {day} {month} {year}",
-        &[
-            ("weekday", tr(weekday)),
-            ("day", date.day().to_string()),
-            ("month", tr(month)),
-            ("year", date.year().to_string()),
-        ],
+    format!(
+        "{} {} {}",
+        tr(weekday).chars().take(3).collect::<String>(),
+        date.day(),
+        tr(month).chars().take(3).collect::<String>()
     )
-}
-pub fn state(value: &str) -> String {
-    tr(match value {
-        "awake" => "Awake",
-        "asleep" => "Sleep",
-        "off" => "Off (OS evidence)",
-        "active" => "Active",
-        "away" => "AFK",
-        "recording" => "Tracking",
-        "paused" => "Paused",
-        "stopped" => "Tracker stopped",
-        "unobserved" => "Unobserved",
-        "unknown" => "Unknown",
-        "ok" => "Available",
-        "permission_missing" | "permission_required" => "Permission missing",
-        "unsupported" => "Unsupported",
-        _ => value,
-    })
 }

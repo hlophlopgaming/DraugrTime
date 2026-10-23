@@ -1,3 +1,4 @@
+mod week;
 use super::*;
 use chrono::{Datelike, TimeZone, Timelike};
 use draugr_time_core::{Event, GroupBy, Report, Tag, TagRange};
@@ -22,6 +23,8 @@ pub enum Edit {
     Highlight(Highlight),
     Expand,
     OpenDay(NaiveDate),
+    ReviewGap(Range),
+    OpenFullReport,
     Export(bool),
     Import,
     File(Option<std::path::PathBuf>),
@@ -38,7 +41,7 @@ pub struct Day {
     pub bands: [Vec<Band>; 3],
     cache: Arc<Mutex<WeekCache>>,
     hours: Vec<(Range, f32)>,
-    clock_extent: (f32, f32),
+    away: Vec<Range>,
 }
 impl Day {
     fn summarize(date: NaiveDate, range: Range, report: &Report) -> Self {
@@ -47,7 +50,7 @@ impl Day {
             let duration = interval.end_ts.min(range.end) - interval.start_ts.max(range.start);
             *tag_totals.entry(interval.tag_id).or_default() += duration;
         }
-        let mut day = Self {
+        let day = Self {
             date,
             range,
             active_ms: tag_totals.values().sum(),
@@ -55,16 +58,8 @@ impl Day {
             bands: Default::default(),
             cache: Arc::new(Mutex::new(WeekCache::default())),
             hours: clock_hours(range),
-            clock_extent: (1440.0, 0.0),
+            away: Vec::new(),
         };
-        let mut extent: (f32, f32) = (1440.0, 0.0);
-        for interval in day_intervals(report, range) {
-            for (start, end) in clock_spans(&day, Range::new(interval.start_ts, interval.end_ts)) {
-                extent.0 = extent.0.min(start);
-                extent.1 = extent.1.max(end);
-            }
-        }
-        day.clock_extent = extent;
         day
     }
 }
@@ -174,8 +169,8 @@ struct WeekCache {
     highlight: Highlight,
     minute: i64,
 }
-const WEEK_RULER: f32 = 24.0;
-const WEEK_ROW: f32 = 42.0;
+const WEEK_RULER: f32 = design::WEEK_RULER;
+const WEEK_ROW: f32 = design::WEEK_ROW;
 struct WeekCanvas<'a> {
     days: &'a [Day],
     report: &'a Report,
@@ -197,35 +192,14 @@ fn clock_spans(day: &Day, range: Range) -> impl Iterator<Item = (f32, f32)> + '_
 }
 impl WeekCanvas<'_> {
     fn hours(&self) -> (f32, f32) {
-        let mut first: f32 = 1440.0;
-        let mut last: f32 = 0.0;
-        for day in self.days {
-            first = first.min(day.clock_extent.0);
-            last = last.max(day.clock_extent.1);
-        }
-        if last <= first {
-            return (0.0, 24.0);
-        }
-        if let Some(day) = self
-            .days
-            .iter()
-            .find(|d| d.range.start <= self.now && self.now < d.range.end)
-        {
-            for (start, end) in clock_spans(
-                day,
-                Range::new(self.now, (self.now + 60_000).min(day.range.end)),
-            ) {
-                first = first.min(start);
-                last = last.max(end);
-            }
-        }
-        (first.div_euclid(60.0), (last / 60.0).ceil().min(24.0))
+        (design::WEEK_FIRST_HOUR, design::WEEK_LAST_HOUR)
     }
     fn day_at(&self, p: Point) -> Option<&Day> {
         if p.y < WEEK_RULER {
             return None;
         }
-        self.days.get(((p.y - WEEK_RULER) / WEEK_ROW) as usize)
+        self.days
+            .get(((p.y - WEEK_RULER) / (WEEK_ROW + design::HAIRLINE)) as usize)
     }
     fn hover(&self, p: Point, size: Size) -> Option<(Range, Option<i64>, &str)> {
         let day = self.day_at(p)?;
@@ -330,114 +304,208 @@ impl canvas::Program<Message> for WeekCanvas<'_> {
         let x = |minute: f32| {
             ((minute / 60.0 - first) / (last - first) * bounds.width).clamp(0.0, bounds.width)
         };
+        let p = design::Palette::new(theme.palette().background.r < 0.5);
         let colors = theme.extended_palette();
         let geometry = cache.geometry.draw(renderer, bounds.size(), |frame| {
             let started = Instant::now();
             for (index, day) in self.days.iter().enumerate() {
-                let y = WEEK_RULER + index as f32 * WEEK_ROW;
-                frame.fill_rectangle(
-                    Point::new(0.0, y),
-                    Size::new(bounds.width, WEEK_ROW - 4.0),
-                    colors.background.base.color,
-                );
+                let y = WEEK_RULER + index as f32 * (WEEK_ROW + design::HAIRLINE);
                 let today = day.range.start <= self.now && self.now < day.range.end;
-                for (start, end) in clock_spans(
-                    day,
-                    Range::new(day.range.start, day.range.end.min(self.now)),
-                ) {
+                if today {
                     frame.fill_rectangle(
-                        Point::new(x(start), y),
-                        Size::new((x(end) - x(start)).max(0.0), WEEK_ROW - 4.0),
-                        if today {
-                            Color {
-                                a: 0.12,
-                                ..colors.primary.base.color
-                            }
-                        } else {
-                            colors.background.weak.color
+                        Point::new(0.0, y),
+                        Size::new(bounds.width, WEEK_ROW),
+                        Color {
+                            a: design::TODAY_TINT,
+                            ..p.accent
                         },
                     );
                 }
-                for (row, bands) in day.bands.iter().enumerate() {
-                    let (offset, height) = match row {
-                        1 => (3.0, 4.0),
-                        2 => (21.0, 16.0),
-                        _ => (3.0, 16.0),
-                    };
-                    for band in bands {
-                        let range = Range::new(
-                            day.range.start + day.range.duration() * i64::from(band.start) / 1440,
-                            (day.range.start + day.range.duration() * i64::from(band.end) / 1440)
-                                .min(self.now),
-                        );
-                        for (start, end) in clock_spans(day, range) {
-                            frame.fill_rectangle(
-                                Point::new(x(start), y + offset),
-                                Size::new((x(end) - x(start)).max(0.0), height),
-                                Color {
-                                    r: band.color[0],
-                                    g: band.color[1],
-                                    b: band.color[2],
-                                    a: if row == 2 && highlight.is_some() {
-                                        0.22
-                                    } else {
-                                        1.0
-                                    },
-                                },
-                            );
-                        }
-                    }
-                }
-                if let Some((tag, _)) = highlight {
-                    for interval in
-                        day_intervals(self.report, day.range).filter(|i| i.tag_id == tag)
-                    {
-                        for (start, end) in clock_spans(
-                            day,
-                            Range::new(interval.start_ts, interval.end_ts.min(self.now)),
-                        ) {
-                            frame.fill_rectangle(
-                                Point::new(x(start), y + 21.0),
-                                Size::new((x(end) - x(start)).max(0.0), 16.0),
-                                tag_color(self.tags, tag),
-                            );
-                        }
-                    }
-                }
-                if today {
-                    let minute = clock_minute(self.now);
-                    if first * 60.0 <= minute && minute <= last * 60.0 {
-                        frame.stroke(
-                            &Path::line(
-                                Point::new(x(minute), y),
-                                Point::new(x(minute), y + WEEK_ROW - 4.0),
+                for hour in first as u32..=last as u32 {
+                    frame.stroke(
+                        &Path::line(
+                            Point::new(x(hour as f32 * 60.0), y + design::WEEK_TAG_Y),
+                            Point::new(
+                                x(hour as f32 * 60.0),
+                                y + design::WEEK_ACTIVITY_Y + design::WEEK_ACTIVITY_HEIGHT,
                             ),
-                            Stroke::default()
-                                .with_color(colors.primary.strong.color)
-                                .with_width(2.0),
+                        ),
+                        Stroke::default()
+                            .with_color(p.grid_half)
+                            .with_width(design::HAIRLINE),
+                    );
+                }
+                // Rasterize dense context to pixels before drawing; subpixel events stay visible.
+                for band in &day.bands[0] {
+                    let range = Range::new(
+                        day.range.start + day.range.duration() * i64::from(band.start) / 1440,
+                        (day.range.start + day.range.duration() * i64::from(band.end) / 1440)
+                            .min(self.now),
+                    );
+                    for (start, end) in clock_spans(day, range) {
+                        frame.fill_rectangle(
+                            Point::new(x(start), y + design::WEEK_ACTIVITY_Y),
+                            Size::new(
+                                (x(end) - x(start) - design::HAIRLINE).max(0.0),
+                                design::WEEK_ACTIVITY_HEIGHT,
+                            ),
+                            Color::from_rgb(band.color[0], band.color[1], band.color[2]),
                         );
                     }
                 }
-            }
-            for hour in first as u32..=last as u32 {
-                let px = x(hour as f32 * 60.0);
-                let major = hour % 6 == 0;
-                frame.stroke(
-                    &Path::line(Point::new(px, WEEK_RULER), Point::new(px, bounds.height)),
-                    Stroke::default().with_color(Color {
-                        a: if major { 0.35 } else { 0.12 },
-                        ..colors.background.base.text
-                    }),
-                );
-                if major || bounds.width / (last - first) >= 34.0 || hour % 2 == 0 {
+                for range in &day.away {
+                    for (start, end) in
+                        clock_spans(day, Range::new(range.start, range.end.min(self.now)))
+                    {
+                        let left = x(start);
+                        let width = (x(end) - left).max(0.0);
+                        frame.fill_rectangle(
+                            Point::new(left, y + design::WEEK_ACTIVITY_Y),
+                            Size::new(width, design::WEEK_ACTIVITY_HEIGHT),
+                            p.away_dim,
+                        );
+                        let mut hatch = left;
+                        while hatch < left + width {
+                            let run = (left + width - hatch).min(design::WEEK_ACTIVITY_HEIGHT);
+                            frame.stroke(
+                                &Path::line(
+                                    Point::new(
+                                        hatch,
+                                        y + design::WEEK_ACTIVITY_Y + design::WEEK_ACTIVITY_HEIGHT,
+                                    ),
+                                    Point::new(
+                                        hatch + run,
+                                        y + design::WEEK_ACTIVITY_Y + design::WEEK_ACTIVITY_HEIGHT
+                                            - run,
+                                    ),
+                                ),
+                                Stroke::default()
+                                    .with_color(p.away)
+                                    .with_width(design::HAIRLINE),
+                            );
+                            hatch += design::HATCH_STEP;
+                        }
+                    }
+                }
+                let pixels = week::rasterize(day, self.report, bounds.width, self.now);
+                for (lane, cells) in pixels.iter().enumerate() {
+                    let mut start = 0;
+                    while start < cells.len() {
+                        let mut end = start + 1;
+                        while end < cells.len() && cells[end] == cells[start] {
+                            end += 1;
+                        }
+                        if let Some((id, rgb)) = cells[start] {
+                            let alpha = if highlight.as_ref().is_none_or(|h| h.0 == id) {
+                                1.0
+                            } else {
+                                design::DIMMED_ALPHA
+                            };
+                            let (offset, height) = if lane == 0 {
+                                (design::WEEK_TAG_Y, design::WEEK_TAG_HEIGHT)
+                            } else {
+                                (design::WEEK_ACTIVITY_Y, design::WEEK_ACTIVITY_HEIGHT)
+                            };
+                            let width =
+                                ((end - start) as f32 - design::HAIRLINE).max(design::HAIRLINE);
+                            let color = if lane == 0 {
+                                tag_color(self.tags, id)
+                            } else {
+                                Color::from_rgb(rgb[0], rgb[1], rgb[2])
+                            };
+                            if lane == 0 && id.is_none() {
+                                let mut dash = start as f32;
+                                while dash < start as f32 + width {
+                                    let right =
+                                        (dash + design::DASH_LENGTH).min(start as f32 + width);
+                                    for dy in [offset, offset + height] {
+                                        frame.stroke(
+                                            &Path::line(
+                                                Point::new(dash, y + dy),
+                                                Point::new(right, y + dy),
+                                            ),
+                                            Stroke::default()
+                                                .with_color(Color {
+                                                    a: alpha,
+                                                    ..p.text3
+                                                })
+                                                .with_width(design::HAIRLINE),
+                                        );
+                                    }
+                                    dash += design::DASH_LENGTH * 2.0;
+                                }
+                            } else {
+                                frame.fill_rectangle(
+                                    Point::new(start as f32, y + offset),
+                                    Size::new(width, height),
+                                    Color { a: alpha, ..color },
+                                );
+                            }
+                        }
+                        start = end;
+                    }
+                }
+                for band in &day.bands[1] {
+                    let range = Range::new(
+                        day.range.start + day.range.duration() * i64::from(band.start) / 1440,
+                        (day.range.start + day.range.duration() * i64::from(band.end) / 1440)
+                            .min(self.now),
+                    );
+                    for (start, end) in clock_spans(day, range) {
+                        frame.fill_rectangle(
+                            Point::new(x(start), y + design::WEEK_ACTIVITY_Y),
+                            Size::new((x(end) - x(start)).max(0.0), design::WEEK_DIAGNOSTIC_HEIGHT),
+                            p.danger,
+                        );
+                    }
+                }
+                if day.active_ms == 0 {
                     frame.fill_text(Text {
-                        content: format!("{hour:02}"),
-                        position: Point::new(px.min(bounds.width - 18.0), 2.0),
-                        size: 11.0.into(),
-                        color: colors.background.base.text,
+                        content: tr(if day.range.start > self.now {
+                            "No data yet"
+                        } else {
+                            "No activity in this range"
+                        }),
+                        position: Point::new(design::CONTROL_GAP as f32, y + design::WEEK_TAG_Y),
+                        font: design::UI,
+                        size: (design::LABEL as f32).into(),
+                        color: p.text3,
                         ..Default::default()
                     });
                 }
+                frame.stroke(
+                    &Path::line(
+                        Point::new(0.0, y + WEEK_ROW),
+                        Point::new(bounds.width, y + WEEK_ROW),
+                    ),
+                    Stroke::default()
+                        .with_color(p.line_soft)
+                        .with_width(design::HAIRLINE),
+                );
+            }
+            let step = if bounds.width / ((last - first) / 2.0)
+                < design::WEEK_AXIS_LABEL + design::CONTROL_GAP as f32
+            {
+                4
+            } else {
+                2
+            };
+            for hour in (first as u32..=last as u32).step_by(step) {
+                frame.fill_text(Text {
+                    content: format!("{hour:02}:00"),
+                    position: Point::new(
+                        x(hour as f32 * 60.0).clamp(
+                            (design::WEEK_AXIS_LABEL / 2.0).min(bounds.width / 2.0),
+                            (bounds.width - design::WEEK_AXIS_LABEL / 2.0).max(bounds.width / 2.0),
+                        ),
+                        design::HAIRLINE,
+                    ),
+                    align_x: iced::alignment::Horizontal::Center.into(),
+                    font: design::MONO,
+                    size: (design::CAPTION as f32).into(),
+                    color: p.text3,
+                    ..Default::default()
+                });
             }
             self.stats.frames.fetch_add(1, Ordering::Relaxed);
             self.stats
@@ -498,6 +566,7 @@ pub struct Data {
     pub report: Report,
     pub days: Vec<Day>,
     pub tags: Vec<Tag>,
+    pub previous: BTreeMap<Option<i64>, i64>,
 }
 #[derive(Default)]
 pub struct Ui {
@@ -634,7 +703,7 @@ fn date_range(from: &str, to: &str) -> Result<(NaiveDate, NaiveDate, Range), Str
     }
     Ok((from, to, range))
 }
-fn write_export(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+pub(super) fn write_export(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
     use std::io::Write;
     let parent = path
         .parent()
@@ -660,6 +729,16 @@ fn hour_ticks_with<T: TimeZone>(
 }
 fn hour_ticks(range: Range) -> Vec<(i64, String)> {
     hour_ticks_with(range, |ts| Local.timestamp_millis_opt(ts).unwrap())
+}
+fn fixture_tracks(range: Range, apps: &[(String, String)], now: i64) -> Vec<Track> {
+    let mut tracks = model::fixture_with_apps(range, apps);
+    for track in &mut tracks {
+        track.segments.retain_mut(|s| {
+            s.range.end = s.range.end.min(now);
+            s.range.end > s.range.start
+        });
+    }
+    tracks
 }
 fn load(
     shared: draugr_time_daemon::Shared,
@@ -730,6 +809,13 @@ fn load(
                     }
                     events.retain(|e| e.end_ts > e.start_ts);
                     let tracks = model::tracks(&events, &[], &[], range);
+                    day.away.extend(
+                        tracks[1]
+                            .segments
+                            .iter()
+                            .filter(|s| s.key.as_ref() == "away")
+                            .map(|s| s.range),
+                    );
                     fill_states(&mut cells, &tracks, range);
                     cursor = next;
                 }
@@ -744,7 +830,20 @@ fn load(
             .succ_opt()
             .ok_or_else(|| tr("Choose a valid date range"))?;
     }
+    let previous = if week {
+        let range = week::previous_week(start).ok_or_else(|| tr("Choose a valid date range"))?;
+        shared
+            .report(range.start, range.end)
+            .map_err(|e| e.to_string())?
+            .rows(GroupBy::Tag, None)
+            .into_iter()
+            .map(|r| (r.tag_id, r.duration_ms))
+            .collect()
+    } else {
+        BTreeMap::new()
+    };
     Ok(Data {
+        previous,
         from,
         to,
         report,
@@ -800,6 +899,29 @@ impl State {
             Edit::Filter(id) => self.report_ui.filter = id,
             Edit::Highlight(h) => self.report_ui.highlight = h,
             Edit::Expand => self.report_ui.expanded = !self.report_ui.expanded,
+            Edit::OpenFullReport => {
+                let dates = self
+                    .report_ui
+                    .data
+                    .as_ref()
+                    .map(|data| (data.from.clone(), data.to.clone()));
+                self.set_screen("Reports");
+                if let Some((from, to)) = dates {
+                    self.report_ui.from = from;
+                    self.report_ui.to = to;
+                }
+                return self.edit_report(Edit::Refresh);
+            }
+            Edit::ReviewGap(range) => {
+                let date = Local
+                    .timestamp_millis_opt(range.start)
+                    .unwrap()
+                    .date_naive();
+                self.set_screen("Day");
+                self.change_date(date);
+                self.selection = model::clip(range, self.day);
+                self.summary();
+            }
             Edit::OpenDay(date) => {
                 self.set_screen("Day");
                 self.change_date(date);
@@ -844,12 +966,28 @@ impl State {
                     let mut total = Report::default();
                     loop {
                         let range = model::day_bounds(date);
-                        let tracks = model::fixture_with_apps(range, &self.preview_apps);
-                        let report = from_tracks(&tracks, &[], range).unwrap();
+                        let now = draugr_time_daemon::now_ms();
+                        let tracks = fixture_tracks(range, &self.preview_apps, now);
+                        let report = if range.start >= now {
+                            Report {
+                                from: range.start,
+                                to: range.end,
+                                ..Default::default()
+                            }
+                        } else {
+                            from_tracks(&tracks, &[], Range::new(range.start, range.end.min(now)))
+                                .unwrap()
+                        };
                         total.active_ms += report.active_ms;
                         let mut day = Day::summarize(date, range, &report);
-                        if self.screen == "Week" {
+                        if self.screen == "Week" && range.start < now {
                             day.bands = bands_from_tracks(&tracks, &report, range, &[]);
+                            day.away = tracks[1]
+                                .segments
+                                .iter()
+                                .filter(|s| s.key.as_ref() == "away")
+                                .map(|s| s.range)
+                                .collect();
                         }
                         days.push(day);
                         total.intervals.extend(report.intervals);
@@ -860,7 +998,36 @@ impl State {
                     }
                     total.from = days[0].range.start;
                     total.to = days.last().unwrap().range.end;
+                    let previous = if self.screen == "Week" {
+                        let range = week::previous_week(start).unwrap();
+                        let mut total = Report::default();
+                        let mut date = start.checked_sub_days(Days::new(7)).unwrap();
+                        for _ in 0..7 {
+                            let day = model::day_bounds(date);
+                            let tracks = fixture_tracks(
+                                day,
+                                &self.preview_apps,
+                                draugr_time_daemon::now_ms(),
+                            );
+                            total
+                                .intervals
+                                .extend(from_tracks(&tracks, &[], day).unwrap().intervals);
+                            date = date.succ_opt().unwrap();
+                        }
+                        total.from = range.start;
+                        total.to = range.end;
+                        total.active_ms =
+                            total.intervals.iter().map(|i| i.end_ts - i.start_ts).sum();
+                        total
+                            .rows(GroupBy::Tag, None)
+                            .into_iter()
+                            .map(|r| (r.tag_id, r.duration_ms))
+                            .collect()
+                    } else {
+                        BTreeMap::new()
+                    };
                     self.report_ui.data = Some(Data {
+                        previous,
                         from,
                         to,
                         report: total,
@@ -915,6 +1082,8 @@ impl State {
                     return Task::none();
                 };
                 let report = data.report.clone();
+                let timesheet =
+                    (self.screen == "Week").then(|| week::timesheet_csv(&data.report, &data.days));
                 let grouping = group(self.report_ui.group);
                 let filter = self.report_ui.filter;
                 let shared = self.runtime.as_ref().map(|r| r.shared.clone());
@@ -941,7 +1110,9 @@ impl State {
                                     .map_err(|e| e.to_string())?;
                                 serde_json::to_vec_pretty(&archive).map_err(|e| e.to_string())?
                             } else {
-                                report.csv(grouping, filter).into_bytes()
+                                timesheet
+                                    .unwrap_or_else(|| report.csv(grouping, filter))
+                                    .into_bytes()
                             };
                             write_export(file.path(), &bytes)
                         })
@@ -1007,12 +1178,11 @@ impl State {
         if self.screen == "Overview" {
             return self.overview_view();
         }
+        if self.screen == "Week" {
+            return self.week_view(false);
+        }
         let ui = &self.report_ui;
-        let mut body = if self.screen == "Week" {
-            column![].spacing(8)
-        } else {
-            column![text(tr(self.screen)).size(22)].spacing(8)
-        };
+        let mut body = column![text(tr(self.screen)).size(22)].spacing(8);
         if self.screen == "Reports" {
             body = body.push(
                 row![
@@ -1049,145 +1219,8 @@ impl State {
             tr("Active"),
             model::duration(data.report.active_ms)
         );
-        if self.screen == "Week" {
-            body = body.push(
-                row![
-                    button(text(tr("Refresh"))).on_press(Message::Report(Edit::Refresh)),
-                    text(summary)
-                ]
-                .spacing(12)
-                .align_y(Alignment::Center),
-            );
-        } else {
-            body = body.push(text(summary));
-        }
-        if self.screen == "Week" {
-            let now = draugr_time_daemon::now_ms();
-            let mut dates = column![space::vertical().height(WEEK_RULER)].spacing(0);
-            let mut totals = column![space::vertical().height(WEEK_RULER)].spacing(0);
-            let maximum = data
-                .days
-                .iter()
-                .map(|d| d.active_ms)
-                .max()
-                .unwrap_or(1)
-                .max(1);
-            for day in &data.days {
-                dates = dates.push(
-                    button(
-                        text(format!(
-                            "{} {}",
-                            tr([
-                                "Monday",
-                                "Tuesday",
-                                "Wednesday",
-                                "Thursday",
-                                "Friday",
-                                "Saturday",
-                                "Sunday"
-                            ][day.date.weekday().num_days_from_monday() as usize])
-                            .chars()
-                            .take(3)
-                            .collect::<String>(),
-                            day.date.format("%d.%m")
-                        ))
-                        .size(13),
-                    )
-                    .on_press(Message::Report(Edit::OpenDay(day.date)))
-                    .style(if day.range.start <= now && now < day.range.end {
-                        button::primary
-                    } else {
-                        button::text
-                    })
-                    .height(WEEK_ROW)
-                    .width(112),
-                );
-                let share = (day.active_ms as f64 / maximum as f64 * 1000.0)
-                    .round()
-                    .clamp(1.0, 999.0) as u16;
-                totals = totals.push(
-                    container(
-                        column![
-                            text(model::duration(day.active_ms)).size(13),
-                            row![
-                                container(space::horizontal())
-                                    .height(5)
-                                    .width(Length::FillPortion(share))
-                                    .style(|theme: &Theme| container::Style {
-                                        background: Some(
-                                            theme.extended_palette().primary.base.color.into()
-                                        ),
-                                        ..Default::default()
-                                    }),
-                                space::horizontal().width(Length::FillPortion(1000 - share))
-                            ]
-                        ]
-                        .spacing(6),
-                    )
-                    .height(WEEK_ROW)
-                    .width(92)
-                    .padding([6, 4]),
-                );
-            }
-            body = body.push(
-                row![
-                    dates,
-                    Canvas::new(WeekCanvas {
-                        days: &data.days,
-                        report: &data.report,
-                        tags: &data.tags,
-                        highlight: &ui.highlight,
-                        now,
-                        stats: &self.stats
-                    })
-                    .width(Length::Fill)
-                    .height(WEEK_RULER + WEEK_ROW * data.days.len() as f32),
-                    totals
-                ]
-                .spacing(8),
-            );
-            let mut legend = row![].spacing(6);
-            for r in data.report.rows(GroupBy::Tag, None) {
-                let color = tag_color(&data.tags, r.tag_id);
-                let highlight = Some((r.tag_id, None));
-                let next = if ui.highlight == highlight {
-                    None
-                } else {
-                    highlight
-                };
-                legend = legend.push(
-                    button(
-                        row![
-                            container(space::horizontal()).width(12).height(12).style(
-                                move |_: &Theme| container::Style {
-                                    background: Some(color.into()),
-                                    ..Default::default()
-                                }
-                            ),
-                            text(format!(
-                                "{} · {}",
-                                translate_label(&r.label),
-                                model::duration(r.duration_ms)
-                            ))
-                            .size(13)
-                        ]
-                        .spacing(6)
-                        .align_y(Alignment::Center),
-                    )
-                    .on_press(Message::Report(Edit::Highlight(next)))
-                    .style(if ui.highlight == Some((r.tag_id, None)) {
-                        button::primary
-                    } else {
-                        button::secondary
-                    }),
-                );
-            }
-            body = body.push(
-                scrollable(legend).direction(scrollable::Direction::Horizontal(
-                    scrollable::Scrollbar::default(),
-                )),
-            );
-        } else {
+        body = body.push(text(summary));
+        {
             body = body.push(
                 row![
                     button(text(tr("Tags"))).on_press(Message::Report(Edit::Group(0))),
@@ -1344,9 +1377,9 @@ impl State {
                                 )))))
                                 .style(
                                     if self.report_ui.highlight == Some((slice.tag_id, None)) {
-                                        button::primary
+                                        design::selected
                                     } else {
-                                        button::text
+                                        design::ghost
                                     },
                                 ),
                             );
@@ -1375,9 +1408,9 @@ impl State {
                             ))
                             .width(Length::Fill)
                             .style(if self.report_ui.highlight == slice.key() {
-                                button::primary
+                                design::selected
                             } else {
-                                button::text
+                                design::ghost
                             })
                             .on_press(Message::Report(Edit::Highlight(slice.key()))),
                             text(label),
@@ -2187,10 +2220,10 @@ mod memory_regression_tests {
             now: range.end,
             stats: &stats,
         };
-        assert_eq!(grid.hours(), (10.0, 13.0));
+        assert_eq!(grid.hours(), (7.0, 21.0));
         let bounds = Rectangle::with_size(Size::new(600.0, 76.0));
-        let cursor = mouse::Cursor::Available(Point::new(200.0, 50.0));
-        let hover = grid.hover(Point::new(200.0, 50.0), bounds.size()).unwrap();
+        let cursor = mouse::Cursor::Available(Point::new(180.0, 50.0));
+        let hover = grid.hover(Point::new(180.0, 50.0), bounds.size()).unwrap();
         assert_eq!(hover.0, Range::new(start, end));
         assert_eq!(hover.1, Some(1));
         assert_eq!(hover.2, "Project X");
@@ -2210,7 +2243,7 @@ mod memory_regression_tests {
             ..grid
         };
         assert!(future
-            .hover(Point::new(200.0, 50.0), bounds.size())
+            .hover(Point::new(180.0, 50.0), bounds.size())
             .is_none());
     }
 }

@@ -1,6 +1,5 @@
 use super::*;
 use draugr_time_core::{Collection, Rule, RuleMatch};
-use iced::widget::column;
 use serde_json::json;
 
 #[derive(Default)]
@@ -16,6 +15,12 @@ pub struct Editor {
     pub preview: Vec<RuleMatch>,
     pub error: String,
     pub confirm: bool,
+    pub modified: bool,
+    pub ignore_case: bool,
+    pub apply_recent: bool,
+    pub regex_error: Option<String>,
+    pub coverage: draugr_time_core::RuleCoverage,
+    pub live_ms: i64,
 }
 #[derive(Clone, Debug)]
 pub enum Edit {
@@ -24,23 +29,29 @@ pub enum Edit {
     Field(String),
     Pattern(String),
     Tag(i64),
-    Priority(String),
-    Enabled(bool),
-    From(String),
-    To(String),
     Save,
     Delete,
-    Preview,
     Apply,
     Confirm,
     Cancel,
+    Discard,
+    IgnoreCase(bool),
+    ApplyRecent(bool),
+    RefreshPreview,
 }
 impl Editor {
+    pub(super) fn effective_pattern(&self) -> String {
+        if self.ignore_case {
+            format!("(?i:{})", self.pattern)
+        } else {
+            self.pattern.clone()
+        }
+    }
     fn draft(&self) -> Result<Rule, String> {
         Ok(Rule {
             id: self.id.unwrap_or(0),
             field: self.field.clone(),
-            pattern: self.pattern.clone(),
+            pattern: self.effective_pattern(),
             tag_id: self.tag_id.ok_or_else(|| tr("Choose a tag"))?,
             priority: self
                 .priority
@@ -69,59 +80,111 @@ impl State {
             self.error = tr("Start recording to edit rules");
             return;
         };
+        let date = self
+            .management
+            .data
+            .as_ref()
+            .map(|d| d.date)
+            .unwrap_or(self.date);
         let mut db = runtime.shared.storage.lock().unwrap();
         let e = &mut self.rule_editor;
+        let confirmed = e.confirm;
         e.confirm = false;
+        if matches!(
+            event,
+            Edit::Field(_) | Edit::Pattern(_) | Edit::Tag(_) | Edit::IgnoreCase(_)
+        ) {
+            e.modified = true;
+        }
         match event {
             Edit::New => {
                 *e = Editor {
                     field: "app".into(),
-                    priority: "0".into(),
-                    enabled: true,
-                    from: self
-                        .date
-                        .checked_sub_days(Days::new(6))
-                        .unwrap_or(self.date)
+                    priority: db
+                        .rules()
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|r| r.priority)
+                        .max()
+                        .unwrap_or(-1)
+                        .saturating_add(1)
                         .to_string(),
-                    to: self.date.to_string(),
+                    modified: true,
+                    enabled: true,
+                    from: date
+                        .checked_sub_days(Days::new(6))
+                        .unwrap_or(date)
+                        .to_string(),
+                    to: date.to_string(),
                     ..Default::default()
                 };
             }
             Edit::Select(id) => match db.rules() {
                 Ok(rules) => {
                     if let Some(r) = rules.into_iter().find(|r| r.id == id) {
+                        let (pattern, ignore_case) = if let Some(pattern) = r
+                            .pattern
+                            .strip_prefix("(?i:")
+                            .and_then(|p| p.strip_suffix(')'))
+                            .filter(|p| draugr_time_core::validate_rule_pattern(p).is_ok())
+                        {
+                            (pattern.to_owned(), true)
+                        } else {
+                            (r.pattern.clone(), false)
+                        };
                         *e = Editor {
                             id: Some(id),
+                            ignore_case,
                             field: r.field,
-                            pattern: r.pattern,
+                            pattern,
                             tag_id: Some(r.tag_id),
                             priority: r.priority.to_string(),
                             enabled: r.enabled,
-                            from: self
-                                .date
+                            from: date
                                 .checked_sub_days(Days::new(6))
-                                .unwrap_or(self.date)
+                                .unwrap_or(date)
                                 .to_string(),
-                            to: self.date.to_string(),
+                            to: date.to_string(),
                             ..Default::default()
                         };
                     }
                 }
                 Err(error) => e.error = error.to_string(),
             },
+            Edit::IgnoreCase(value) => e.ignore_case = value,
+            Edit::ApplyRecent(value) => {
+                e.apply_recent = value;
+                return;
+            }
+            Edit::Discard => {
+                let id = e.id;
+                *e = Editor::default();
+                drop(db);
+                if let Some(id) = id {
+                    self.edit_rule(Edit::Select(id));
+                }
+                return;
+            }
             Edit::Field(value) => e.field = value,
             Edit::Pattern(value) => e.pattern = value,
             Edit::Tag(id) => e.tag_id = Some(id),
-            Edit::Priority(value) => e.priority = value,
-            Edit::Enabled(value) => e.enabled = value,
-            Edit::From(value) => e.from = value,
-            Edit::To(value) => e.to = value,
             Edit::Save => {
                 let result=e.draft().and_then(|r|db.put(Collection::Rules,e.id,json!({"field":r.field,"pattern":r.pattern,"tag_id":r.tag_id,"priority":r.priority,"enabled":r.enabled})).map_err(|e|e.to_string()));
                 match result {
                     Ok(value) => {
                         e.id = value["id"].as_i64();
                         self.error.clear();
+                        e.modified = false;
+                        if e.apply_recent {
+                            e.from = date
+                                .checked_sub_days(Days::new(29))
+                                .unwrap_or(date)
+                                .to_string();
+                            e.to = date.to_string();
+                            drop(db);
+                            self.edit_rule(Edit::Apply);
+                            return;
+                        }
                     }
                     Err(error) => {
                         e.error = error;
@@ -144,8 +207,11 @@ impl State {
                         .map_err(|e| e.to_string())
                 }) {
                     Ok(preview) => {
-                        e.preview = preview;
-                        e.confirm = true;
+                        e.preview = preview
+                            .into_iter()
+                            .filter(|r| Some(r.rule_id) == e.id)
+                            .collect();
+                        e.confirm = e.id.is_some();
                         e.error.clear();
                     }
                     Err(error) => e.error = error,
@@ -153,8 +219,11 @@ impl State {
                 return;
             }
             Edit::Confirm => {
+                if !confirmed {
+                    return;
+                }
                 let result = e.bounds().and_then(|range| {
-                    db.apply_rules_checked(range.start, range.end, &e.preview)
+                    db.apply_rule_checked(range.start, range.end, e.id.unwrap_or(0), &e.preview)
                         .map_err(|e| e.to_string())
                 });
                 match result {
@@ -173,142 +242,41 @@ impl State {
                 return;
             }
             Edit::Cancel => return,
-            Edit::Preview => {}
+            Edit::RefreshPreview => {}
         }
-        match e.bounds().and_then(|range| {
-            e.draft().and_then(|draft| {
-                db.preview_rules(range.start, range.end, Some(&draft))
+        e.regex_error = draugr_time_core::validate_rule_pattern(&e.effective_pattern())
+            .err()
+            .map(|e| e.to_string());
+        let live_range = Range::new(
+            model::day_bounds(date.checked_sub_days(Days::new(6)).unwrap_or(date)).start,
+            model::day_bounds(date).end,
+        );
+        e.coverage = e
+            .draft()
+            .and_then(|draft| {
+                db.rule_coverage(live_range.start, live_range.end, &draft)
                     .map_err(|e| e.to_string())
             })
+            .unwrap_or_default();
+        match e.draft().and_then(|draft| {
+            db.preview_rules(live_range.start, live_range.end, Some(&draft))
+                .map_err(|e| e.to_string())
         }) {
             Ok(preview) => {
+                e.live_ms = preview
+                    .iter()
+                    .filter(|r| r.rule_id == e.id.unwrap_or(0))
+                    .map(|r| r.end_ts - r.start_ts)
+                    .sum();
                 e.preview = preview;
                 e.error.clear();
             }
             Err(error) => {
                 e.preview.clear();
+                e.live_ms = 0;
                 e.error = error;
             }
         }
-    }
-    pub fn rules_view(&self) -> Element<'_, Message> {
-        let Some(runtime) = &self.runtime else {
-            return column![
-                text(tr("Start recording to edit rules")),
-                button(text(tr("Start recording"))).on_press(Message::Start)
-            ]
-            .spacing(10)
-            .into();
-        };
-        let db = runtime.shared.storage.lock().unwrap();
-        let rules = match db.rules() {
-            Ok(r) => r,
-            Err(e) => return text(e.to_string()).into(),
-        };
-        let tags = db.tags().unwrap_or_default();
-        drop(db);
-        let e = &self.rule_editor;
-        let mut list = column![
-            text(tr("Auto-tagging rules")).size(22),
-            text(tr(
-                "Higher priority wins; ties use the oldest rule. Existing tags are preserved."
-            )),
-            button(text(tr("New rule"))).on_press(Message::Rule(Edit::New))
-        ]
-        .spacing(8);
-        for rule in rules {
-            list = list.push(
-                button(text(format!(
-                    "{} · {} · {} → {} · {}",
-                    if rule.enabled { tr("On") } else { tr("Off") },
-                    rule.priority,
-                    tr(&rule.field),
-                    model::tag_path(&tags, rule.tag_id),
-                    rule.pattern
-                )))
-                .on_press(Message::Rule(Edit::Select(rule.id))),
-            );
-        }
-        if e.field.is_empty() {
-            return scrollable(list).into();
-        }
-        let mut fields = row![].spacing(6);
-        for field in ["app", "title", "url"] {
-            fields = fields.push(
-                button(text(tr(field)))
-                    .on_press(Message::Rule(Edit::Field(field.into())))
-                    .style(if e.field == field {
-                        button::primary
-                    } else {
-                        button::secondary
-                    }),
-            );
-        }
-        let mut choices = column![text(tr("Choose a tag"))].spacing(4);
-        for tag in tags.iter().filter(|t| t.archived == 0) {
-            choices = choices.push(
-                button(text(model::tag_path(&tags, tag.id)))
-                    .on_press(Message::Rule(Edit::Tag(tag.id)))
-                    .style(if e.tag_id == Some(tag.id) {
-                        button::primary
-                    } else {
-                        button::secondary
-                    }),
-            );
-        }
-        let total = e.preview.iter().map(|r| r.end_ts - r.start_ts).sum::<i64>();
-        let mut form = column![
-            fields,
-            text_input(&tr("Regular expression"), &e.pattern)
-                .on_input(|v| Message::Rule(Edit::Pattern(v))),
-            text_input(&tr("Priority"), &e.priority).on_input(|v| Message::Rule(Edit::Priority(v))),
-            checkbox(e.enabled)
-                .label(tr("Enabled"))
-                .on_toggle(|v| Message::Rule(Edit::Enabled(v))),
-            scrollable(choices).height(140),
-            row![
-                button(text(tr("Save rule"))).on_press(Message::Rule(Edit::Save)),
-                button(text(tr("Delete rule")))
-                    .on_press_maybe(e.id.map(|_| Message::Rule(Edit::Delete)))
-            ]
-            .spacing(6),
-            text(tr("History date range (inclusive)")),
-            row![
-                text_input("YYYY-MM-DD", &e.from).on_input(|v| Message::Rule(Edit::From(v))),
-                text_input("YYYY-MM-DD", &e.to).on_input(|v| Message::Rule(Edit::To(v)))
-            ]
-            .spacing(6),
-            text(localized(
-                "Preview: {duration} · {count} intervals",
-                &[
-                    ("duration", model::duration(total)),
-                    ("count", e.preview.len().to_string())
-                ]
-            )),
-            text(tr(
-                "Live preview includes the draft. Apply to history uses saved enabled rules."
-            )),
-            row![
-                button(text(tr("Refresh preview"))).on_press(Message::Rule(Edit::Preview)),
-                button(text(tr("Apply to history"))).on_press(Message::Rule(Edit::Apply))
-            ]
-            .spacing(6),
-            text(localization::error(&e.error)).color(Color::from_rgb8(200, 75, 75))
-        ]
-        .spacing(8);
-        for sample in e.preview.iter().take(5) {
-            form = form.push(text(format!(
-                "{}–{} · {} · {}",
-                model::time_label(sample.start_ts),
-                model::time_label(sample.end_ts),
-                model::duration(sample.end_ts - sample.start_ts),
-                sample.sample
-            )));
-        }
-        if e.confirm {
-            form=form.push(text(localized("Apply {duration} of automatic tags? Existing tags stay unchanged. You can undo this action.",&[("duration",model::duration(total))]))).push(row![button(text(tr("Confirm application"))).on_press(Message::Rule(Edit::Confirm)),button(text(tr("Cancel"))).on_press(Message::Rule(Edit::Cancel))].spacing(6));
-        }
-        scrollable(column![list, container(form).padding(12).style(panel)].spacing(16)).into()
     }
 }
 #[cfg(test)]

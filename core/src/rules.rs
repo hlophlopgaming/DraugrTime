@@ -150,7 +150,7 @@ impl Storage {
         from: i64,
         to: i64,
     ) -> Result<(Vec<RuleMatch>, TagUndo), StorageError> {
-        self.apply_rules_inner(from, to, None)
+        self.apply_rules_inner(from, to, None, None)
     }
     pub fn apply_rules_checked(
         &mut self,
@@ -158,17 +158,30 @@ impl Storage {
         to: i64,
         expected: &[RuleMatch],
     ) -> Result<(Vec<RuleMatch>, TagUndo), StorageError> {
-        self.apply_rules_inner(from, to, Some(expected))
+        self.apply_rules_inner(from, to, Some(expected), None)
+    }
+    pub fn apply_rule_checked(
+        &mut self,
+        from: i64,
+        to: i64,
+        id: i64,
+        expected: &[RuleMatch],
+    ) -> Result<(Vec<RuleMatch>, TagUndo), StorageError> {
+        self.apply_rules_inner(from, to, Some(expected), Some(id))
     }
     fn apply_rules_inner(
         &mut self,
         from: i64,
         to: i64,
         expected: Option<&[RuleMatch]>,
+        selected: Option<i64>,
     ) -> Result<(Vec<RuleMatch>, TagUndo), StorageError> {
         self.connection.execute_batch("BEGIN IMMEDIATE")?;
         let result = (|| {
-            let preview = self.preview_rules(from, to, None)?;
+            let mut preview = self.preview_rules(from, to, None)?;
+            if let Some(id) = selected {
+                preview.retain(|r| r.rule_id == id);
+            }
             if expected.is_some_and(|expected| expected != preview) {
                 return Err(StorageError::InvalidRecord(
                     "Tags changed since preview; preview again".into(),
@@ -250,4 +263,145 @@ fn at<'a>(items: &[&'a Event], index: &mut usize, start: i64, end: i64) -> Optio
         .get(*index)
         .copied()
         .filter(|e| e.start_ts <= start && e.end_ts >= end)
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RuleCoverage {
+    pub matched_ms: i64,
+    pub covered_ms: i64,
+    pub samples: Vec<RuleMatch>,
+}
+pub fn validate_rule_pattern(pattern: &str) -> Result<(), StorageError> {
+    compile(pattern).map(|_| ())
+}
+pub fn rule_match_ranges(pattern: &str, text: &str) -> Result<Vec<(usize, usize)>, StorageError> {
+    Ok(compile(pattern)?
+        .find_iter(text)
+        .filter(|m| m.end() > m.start())
+        .take(16)
+        .map(|m| (m.start(), m.end()))
+        .collect())
+}
+impl Storage {
+    pub fn reorder_rules(&mut self, order: &[i64]) -> Result<(), StorageError> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let expected = {
+            let mut query = tx.prepare("SELECT id FROM rules")?;
+            let ids = query
+                .query_map([], |r| r.get::<_, i64>(0))?
+                .collect::<rusqlite::Result<std::collections::BTreeSet<_>>>()?;
+            ids
+        };
+        let actual = order
+            .iter()
+            .copied()
+            .collect::<std::collections::BTreeSet<_>>();
+        if expected != actual || actual.len() != order.len() {
+            return Err(StorageError::InvalidRecord(
+                "rule order must contain every rule exactly once".into(),
+            ));
+        }
+        for (index, id) in order.iter().enumerate() {
+            tx.execute(
+                "UPDATE rules SET priority=?2 WHERE id=?1",
+                params![id, (order.len() - index) as i64],
+            )?;
+        }
+        tx.commit()?;
+        self.metadata_version = self.metadata_version.wrapping_add(1);
+        Ok(())
+    }
+    /// Single-rule coverage includes tagged active time; application preview remains non-destructive.
+    pub fn rule_coverage(
+        &self,
+        from: i64,
+        to: i64,
+        rule: &Rule,
+    ) -> Result<RuleCoverage, StorageError> {
+        let regex = compile(&rule.pattern)?;
+        if !["app", "title", "url"].contains(&rule.field.as_str()) {
+            return Err(StorageError::InvalidRecord("invalid rule field".into()));
+        }
+        let report = self.report(from, to)?;
+        let mut result = RuleCoverage::default();
+        // Read bounded event chunks, retaining only a handful of samples in the result.
+        let mut cursor = from;
+        while cursor < to {
+            let (mut events, mut end) = self.event_chunk(None, cursor, to, 8193)?;
+            if end <= cursor {
+                end = cursor + 1;
+                events = self.event_chunk(None, cursor, end, i64::MAX)?.0;
+            }
+            let windows: Vec<_> = events.iter().filter(|e| e.bucket == "window").collect();
+            let web: Vec<_> = events.iter().filter(|e| e.bucket == "web").collect();
+            let (mut wi, mut bi) = (0, 0);
+            let mut ri = report.intervals.partition_point(|i| i.end_ts <= cursor);
+            let mut bounds = vec![cursor, end];
+            for event in &events {
+                bounds.extend([
+                    event.start_ts.clamp(cursor, end),
+                    event.end_ts.clamp(cursor, end),
+                ]);
+            }
+            for interval in report.intervals[ri..]
+                .iter()
+                .take_while(|i| i.start_ts < end)
+            {
+                bounds.extend([
+                    interval.start_ts.clamp(cursor, end),
+                    interval.end_ts.clamp(cursor, end),
+                ]);
+            }
+            bounds.sort_unstable();
+            bounds.dedup();
+            for pair in bounds.windows(2) {
+                let (start, stop) = (pair[0], pair[1]);
+                while ri < report.intervals.len() && report.intervals[ri].end_ts <= start {
+                    ri += 1;
+                }
+                let Some(i) = report
+                    .intervals
+                    .get(ri)
+                    .filter(|i| i.start_ts <= start && i.end_ts >= stop)
+                else {
+                    continue;
+                };
+                let w = at(&windows, &mut wi, start, stop);
+                let b = at(&web, &mut bi, start, stop);
+                let event = if rule.field == "url" { b } else { w.or(b) };
+                if let Some(value) = event
+                    .and_then(|e| e.data[&rule.field].as_str())
+                    .filter(|v| regex.is_match(v))
+                {
+                    result.matched_ms += stop - start;
+                    if i.tag_id.is_some() {
+                        result.covered_ms += stop - start;
+                    }
+                    if let Some(last) = result
+                        .samples
+                        .last_mut()
+                        .filter(|m| m.end_ts == start && m.sample == value)
+                    {
+                        last.end_ts = stop;
+                    } else if result.samples.len() < 8 {
+                        result.samples.push(RuleMatch {
+                            rule_id: rule.id,
+                            tag_id: rule.tag_id,
+                            start_ts: start,
+                            end_ts: stop,
+                            sample: value.chars().take(160).collect(),
+                        });
+                    }
+                }
+            }
+            cursor = end;
+        }
+        Ok(result)
+    }
+}
+
+pub fn literal_rule_pattern(value: &str) -> String {
+    format!("^{}$", regex::escape(value))
 }

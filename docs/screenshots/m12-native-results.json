@@ -1,0 +1,38 @@
+[
+  {
+    "name": "m12-day-native-dark-1280",
+    "attempts": [
+      {
+        "exit_code": 0,
+        "output": "Iced benchmark: canvas build max 3.35 ms\n"
+      }
+    ]
+  },
+  {
+    "name": "m12-day-native-light-1280",
+    "attempts": [
+      {
+        "exit_code": 0,
+        "output": "Iced benchmark: canvas build max 3.15 ms\n"
+      }
+    ]
+  },
+  {
+    "name": "m12-day-native-dark-640",
+    "attempts": [
+      {
+        "exit_code": 0,
+        "output": "Iced benchmark: canvas build max 2.34 ms\n"
+      }
+    ]
+  },
+  {
+    "name": "m12-day-native-light-640",
+    "attempts": [
+      {
+        "exit_code": 0,
+        "output": "Iced benchmark: canvas build max 2.83 ms\n"
+      }
+    ]
+  }
+]

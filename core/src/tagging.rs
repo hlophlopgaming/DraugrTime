@@ -65,6 +65,29 @@ fn differences<T: PartialEq>(
     }));
     result
 }
+fn resolve_tag_path(c: &Connection, path: &str) -> Result<(i64, Vec<i64>), StorageError> {
+    let names: Vec<_> = path.split(',').map(str::trim).collect();
+    if names.iter().any(|s| s.is_empty()) {
+        return Err(invalid("Use nonempty comma-separated tags"));
+    }
+    let mut inserted = Vec::new();
+    let mut parent: Option<i64> = None;
+    for name in names {
+        let existing=c.query_row("SELECT id FROM tags WHERE name=?1 AND parent_id IS ?2 AND archived=0 ORDER BY id LIMIT 1",params![name,parent],|r|r.get::<_,i64>(0)).optional()?;
+        parent = Some(if let Some(id) = existing {
+            id
+        } else {
+            c.execute(
+                "INSERT INTO tags(name,parent_id) VALUES(?1,?2)",
+                params![name, parent],
+            )?;
+            let id = c.last_insert_rowid();
+            inserted.push(id);
+            id
+        });
+    }
+    Ok((parent.unwrap(), inserted))
+}
 fn ids(ids: impl Iterator<Item = i64>) -> String {
     ids.map(|id| id.to_string()).collect::<Vec<_>>().join(",")
 }
@@ -246,18 +269,8 @@ impl Storage {
         );
         self.tag_change(["0", &ranges, "0"], |connection| {
             let mut inserted = Vec::new();
-            let mut inserted_tags = Vec::new();
             if let Some(id) = id { if connection.execute("DELETE FROM tag_ranges WHERE id=?1", [id])? == 0 { return Err(StorageError::NotFound); } }
-            let mut parent: Option<i64> = None;
-            for name in names {
-                let existing = connection.query_row("SELECT id FROM tags WHERE name=?1 AND parent_id IS ?2 AND archived=0 ORDER BY id LIMIT 1", params![name,parent], |r|r.get::<_,i64>(0)).optional()?;
-                parent = Some(if let Some(id) = existing { id } else {
-                    connection.execute("INSERT INTO tags(name,parent_id) VALUES(?1,?2)", params![name,parent])?;
-                    let id = connection.last_insert_rowid();
-                    inserted_tags.push(id);
-                    id
-                });
-            }
+            let (parent,inserted_tags)=resolve_tag_path(connection,path)?;
             let mut query = connection.prepare("SELECT id,tag_id,start_ts,end_ts,note,COALESCE(precedence_id,id) FROM tag_ranges WHERE start_ts<?2 AND end_ts>?1")?;
             let overlaps = query.query_map(params![start,end], |r|Ok((r.get::<_,i64>(0)?,r.get::<_,i64>(1)?,r.get::<_,i64>(2)?,r.get::<_,i64>(3)?,r.get::<_,Option<String>>(4)?,r.get::<_,i64>(5)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
             for (id,tag,from,to,note,precedence) in overlaps {
@@ -279,6 +292,43 @@ impl Storage {
                 return Err(StorageError::NotFound);
             }
             Ok([Vec::new(), Vec::new()])
+        })
+    }
+    pub fn create_tag_path(&mut self, path: &str) -> Result<(i64, TagUndo), StorageError> {
+        let mut id = 0;
+        let undo = self.tag_change(["0", "0", "0"], |c| {
+            let (tag, inserted) = resolve_tag_path(c, path)?;
+            id = tag;
+            Ok([inserted, Vec::new()])
+        })?;
+        Ok((id, undo))
+    }
+    pub fn update_tag_details(
+        &mut self,
+        id: i64,
+        name: &str,
+        color: Option<&str>,
+        archived: bool,
+        parent: Option<i64>,
+    ) -> Result<TagUndo, StorageError> {
+        if name.trim().is_empty()
+            || color.is_some_and(|c| {
+                c.len() != 7
+                    || !c.starts_with('#')
+                    || !c[1..].bytes().all(|b| b.is_ascii_hexdigit())
+            })
+        {
+            return Err(invalid("Nonempty name and #RRGGBB color required"));
+        }
+        self.tag_change([&format!("id={id}"),"0","0"],|c| {
+            if let Some(parent)=parent {
+                let exists:bool=c.query_row("SELECT EXISTS(SELECT 1 FROM tags WHERE id=?1)",[parent],|r|r.get(0))?;
+                if !exists {return Err(StorageError::NotFound);}
+                let cycle:bool=c.query_row("WITH RECURSIVE tree(id) AS (SELECT ?1 UNION SELECT tags.id FROM tags JOIN tree ON parent_id=tree.id) SELECT EXISTS(SELECT 1 FROM tree WHERE id=?2)",params![id,parent],|r|r.get(0))?;
+                if cycle {return Err(invalid("tag parent would create a cycle"));}
+            }
+            if c.execute("UPDATE tags SET name=?2,color=?3,archived=?4,parent_id=?5 WHERE id=?1",params![id,name.trim(),color,archived,parent])?==0 {return Err(StorageError::NotFound);}
+            Ok([Vec::new(),Vec::new()])
         })
     }
     pub fn update_tag(

@@ -1,7 +1,10 @@
 //! Native Draugr Time desktop.
 mod appearance;
+mod components;
+mod day;
 mod design;
 mod localization;
+mod management;
 mod reports;
 #[cfg(test)]
 mod reports_tests;
@@ -10,6 +13,7 @@ mod settings;
 #[cfg(test)]
 mod settings_tests;
 mod setup;
+use design::{button, text_input};
 use localization::{message as localized, tr, LocaleProvider};
 mod memory;
 mod model;
@@ -25,8 +29,7 @@ use chrono::{Days, Local, NaiveDate};
 use iced::{
     keyboard,
     widget::{
-        self, button, checkbox, column, container, image, pane_grid, row, scrollable, slider,
-        space, svg, text, text_input, tooltip,
+        self, checkbox, column, container, image, row, scrollable, space, svg, text, tooltip,
     },
     window, Alignment, Color, Element, Length, Subscription, Task, Theme,
 };
@@ -103,6 +106,7 @@ pub enum Message {
     Settings(settings::Edit),
     Edit(tagging::Edit),
     Rule(rules::Edit),
+    Manage(management::Edit),
     Report(reports::Edit),
     Language(Option<localization::Language>),
     Tick,
@@ -111,22 +115,26 @@ pub enum Message {
     Close(window::Id),
     Closed,
     Screen(&'static str),
-    Date(String),
     Shift(i32),
     Today,
     Search(String),
     Tab(usize),
-    ResizeDay(pane_grid::ResizeEvent),
     Select(Option<Range>),
     Hover(Option<(usize, usize)>),
     Highlight(String),
     Zoom(f64, Option<i64>),
-    Fit,
-    Pan(f64),
     PanBy(f64),
-    Tracks,
-    Visible(usize, bool),
-    Move(usize, i32),
+    DayRange(usize),
+    ExpandTrack(usize),
+    ReviewGaps,
+    TagGap(Range),
+    SelectionTag(String),
+    ApplySelectionTag,
+    ExcludeSelection,
+    SummaryFilter(String),
+    ExpandSummary(String),
+    RecMenu,
+    ToastExpired(Instant),
     More,
     Theme,
     #[cfg(not(target_os = "linux"))]
@@ -150,15 +158,11 @@ pub(super) enum AppIcon {
     Png(image::Handle),
     Svg(svg::Handle),
 }
-#[derive(Clone, Copy, Debug)]
-enum DayPane {
-    Timeline,
-    Summary,
-}
 struct State {
     settings_ui: settings::Ui,
     report_ui: reports::Ui,
     rule_editor: rules::Editor,
+    management: management::Ui,
     language_choice: Option<localization::Language>,
     tags: Vec<draugr_time_core::Tag>,
     tag_ranges: Vec<draugr_time_core::TagRange>,
@@ -168,7 +172,6 @@ struct State {
     away_prompt: tagging::AwayPrompt,
     away_range: Option<Range>,
     date: NaiveDate,
-    date_text: String,
     day: Range,
     view: Range,
     all: Vec<Track>,
@@ -180,6 +183,9 @@ struct State {
     selection: Option<Range>,
     hover: Option<(usize, usize)>,
     highlight: Option<String>,
+    expanded_summary: Option<String>,
+    summary_search: String,
+    selection_tag: String,
     search: String,
     screen: &'static str,
     rail_focus: Option<usize>,
@@ -189,12 +195,18 @@ struct State {
     limit: usize,
     metrics: [i64; 4],
     fixture: bool,
-    tracks_menu: bool,
-    day_panes: pane_grid::State<DayPane>,
+    expanded_tracks: [bool; 4],
+    rec_menu: bool,
+    search_open: bool,
+    block_focus: bool,
+    tag_toast: Option<(Range, Instant)>,
+    range_mode: usize,
     theme: Theme,
     theme_preference: appearance::Preference,
     system_theme: iced::theme::Mode,
     grid_cache: widget::canvas::Cache,
+    hourly_cache: widget::canvas::Cache,
+    hourly: [[i64; 3]; 24],
     cache: widget::canvas::Cache,
     stats: Arc<timeline::PaintStats>,
     icons: HashMap<String, AppIcon>,
@@ -268,6 +280,7 @@ impl State {
             settings_ui: settings::Ui::load(),
             report_ui: reports::Ui::default(),
             rule_editor: rules::Editor::default(),
+            management: management::Ui::default(),
             language_choice,
             tags: Vec::new(),
             tag_ranges: Vec::new(),
@@ -280,7 +293,6 @@ impl State {
             },
             away_range: None,
             date,
-            date_text: date.to_string(),
             day,
             view: day,
             all: if smoke || benchmark {
@@ -296,6 +308,9 @@ impl State {
             selection: None,
             hover: None,
             highlight: None,
+            expanded_summary: None,
+            summary_search: String::new(),
+            selection_tag: String::new(),
             documents: Vec::new(),
             search: String::new(),
             screen: "Day",
@@ -305,13 +320,12 @@ impl State {
             limit: 50,
             metrics: [0; 4],
             fixture: smoke || benchmark,
-            tracks_menu: false,
-            day_panes: pane_grid::State::with_configuration(pane_grid::Configuration::Split {
-                axis: pane_grid::Axis::Horizontal,
-                ratio: 0.6,
-                a: Box::new(pane_grid::Configuration::Pane(DayPane::Timeline)),
-                b: Box::new(pane_grid::Configuration::Pane(DayPane::Summary)),
-            }),
+            expanded_tracks: [false; 4],
+            rec_menu: false,
+            search_open: false,
+            block_focus: false,
+            tag_toast: None,
+            range_mode: 1,
             theme: native_theme(benchmark && args.iter().any(|arg| arg == "--dark")),
             theme_preference: if benchmark && args.iter().any(|arg| arg == "--dark") {
                 appearance::Preference::Dark
@@ -322,6 +336,8 @@ impl State {
             },
             system_theme: iced::theme::Mode::None,
             grid_cache: widget::canvas::Cache::new(),
+            hourly_cache: widget::canvas::Cache::new(),
+            hourly: [[0; 3]; 24],
             cache: widget::canvas::Cache::new(),
             stats,
             icons,
@@ -397,9 +413,13 @@ impl State {
         if matches!(self.screen, "Week" | "Reports") && self.screen != screen {
             self.release_reports();
         }
+        if matches!(self.screen, "Tags" | "Rules") && !matches!(screen, "Tags" | "Rules") {
+            self.release_management();
+        }
         self.screen = screen;
     }
     fn apply_theme(&mut self) {
+        self.hourly_cache.clear();
         self.theme = native_theme(self.theme_preference.is_dark(self.system_theme));
         self.cache.clear();
         self.grid_cache.clear();
@@ -428,7 +448,12 @@ impl State {
             ..window::Settings::default()
         });
         self.window = Some(id);
-        task.map(Message::Opened)
+        let task = task.map(Message::Opened);
+        if matches!(self.screen, "Tags" | "Rules") {
+            Task::batch([task, self.refresh_management()])
+        } else {
+            task
+        }
     }
     fn start(&mut self) {
         if self.runtime.is_some() {
@@ -463,6 +488,8 @@ impl State {
         self.last_load = Instant::now() - Duration::from_secs(5);
     }
     fn release_day(&mut self) {
+        self.release_management();
+        self.hourly_cache.clear();
         self.report_ui.data = None;
         self.report_ui.day = draugr_time_core::Report::default();
         self.report_ui.loading = false;
@@ -478,11 +505,14 @@ impl State {
         self.tag_ranges = Vec::new();
         self.recent_tags = Vec::new();
         self.preview_apps = Vec::new();
+        self.hourly = [[0; 3]; 24];
         self.hover = None;
         self.cache.clear();
         self.grid_cache.clear();
     }
     fn rebuild(&mut self) {
+        self.hourly_cache.clear();
+        self.hourly = day::hourly_totals(&self.all, self.day);
         self.report_ui.day =
             reports::from_tracks(&self.all, &self.tags, self.day).unwrap_or_default();
         let ranges = |track: usize, key: Option<&str>| {
@@ -507,6 +537,7 @@ impl State {
             ),
             model::union_duration(&ranges(0, Some("untagged")), self.day),
         ];
+        self.metrics[3] = self.day_gaps().iter().map(|r| r.duration()).sum();
         let search = self.search.to_lowercase();
         let mut previous = std::mem::take(&mut self.search_text);
         if !search.trim().is_empty() {
@@ -552,6 +583,10 @@ impl State {
         if self.visible != old_visible {
             self.grid_cache.clear();
         }
+        if self.range_mode == 1 {
+            self.view = self.active_hours().unwrap_or(self.day);
+            self.grid_cache.clear();
+        }
         self.summary();
         self.hover = None;
         self.cache.clear();
@@ -562,16 +597,41 @@ impl State {
             self.filtered[track]
                 .iter()
                 .map(|i| &self.all[track].segments[*i]),
-            self.selection.unwrap_or(self.day),
+            self.day,
         );
+        let observed = self.rows.iter().map(|r| r.duration).sum::<i64>().max(1);
+        for row in &mut self.rows {
+            row.share = row.duration as f64 / observed as f64 * 100.0;
+        }
+        let search = self.summary_search.to_lowercase();
+        if !search.trim().is_empty() {
+            let matches: std::collections::HashSet<_> = self.all[3]
+                .segments
+                .iter()
+                .filter(|s| {
+                    s.label.to_lowercase().contains(&search)
+                        || s.detail.to_lowercase().contains(&search)
+                })
+                .map(|s| {
+                    s.app.as_ref().map(|app| {
+                        model::application_identity(app, s.app_name.as_deref().unwrap_or(app))
+                    })
+                })
+                .collect();
+            self.rows.retain(|row| {
+                row.label.to_lowercase().contains(&search)
+                    || matches.contains(&Some(row.key.to_string()))
+            });
+        }
         self.documents = if self.tab == 1 {
-            self.highlight
-                .as_deref()
+            self.expanded_summary
+                .as_ref()
+                .or(self.highlight.as_ref())
                 .map(|key| {
                     model::application_documents_iter(
                         self.filtered[3].iter().map(|i| &self.all[3].segments[*i]),
                         key,
-                        self.selection.unwrap_or(self.day),
+                        self.day,
                     )
                 })
                 .unwrap_or_default()
@@ -582,8 +642,8 @@ impl State {
     fn change_date(&mut self, date: NaiveDate) {
         self.report_ui.highlight = None;
         self.date = date;
-        self.date_text = date.to_string();
         self.day = model::day_bounds(date);
+        self.range_mode = 1;
         self.view = self.day;
         self.grid_cache.clear();
         self.selection = None;
@@ -627,6 +687,14 @@ impl State {
                 _ => None,
             }),
         ];
+        if self.management.dragging.is_some() {
+            subscriptions.push(iced::event::listen_with(|event, _, _| match event {
+                iced::Event::Mouse(iced::mouse::Event::ButtonReleased(
+                    iced::mouse::Button::Left,
+                )) => Some(Message::Manage(management::Edit::EndDrag)),
+                _ => None,
+            }));
+        }
         if self.tick_demand().needed() {
             subscriptions.push(iced::time::every(Duration::from_secs(1)).map(|_| Message::Tick));
         }
@@ -646,8 +714,16 @@ impl State {
         match message {
             Message::Report(event) => return self.edit_report(event),
             Message::Edit(event) => return self.edit(event),
+            Message::Manage(event) => return self.edit_management(event),
             Message::Rule(event) => {
+                let refresh = matches!(
+                    event,
+                    rules::Edit::Save | rules::Edit::Delete | rules::Edit::Confirm
+                );
                 self.edit_rule(event);
+                if refresh {
+                    return self.refresh_management();
+                }
             }
             Message::Language(choice) => {
                 match localization::path().and_then(|p| localization::save(&p, choice)) {
@@ -939,25 +1015,13 @@ impl State {
                 return iced::exit();
             }
             Message::Closed => memory::SystemReclaimer.reclaim(),
-            Message::ResizeDay(event) => {
-                if event.ratio.is_finite() {
-                    self.day_panes
-                        .resize(event.split, event.ratio.clamp(0.0, 1.0));
-                }
-            }
             Message::Screen(screen) => {
                 self.set_screen(screen);
+                if matches!(screen, "Tags" | "Rules") {
+                    return self.refresh_management();
+                }
                 if matches!(screen, "Overview" | "Week" | "Reports") {
                     return self.edit_report(reports::Edit::Refresh);
-                }
-            }
-            Message::Date(input) => {
-                self.date_text = input.clone();
-                if let Ok(date) = NaiveDate::parse_from_str(&input, "%Y-%m-%d") {
-                    self.change_date(date);
-                    if self.screen == "Week" {
-                        return self.edit_report(reports::Edit::Refresh);
-                    }
                 }
             }
             Message::Shift(delta) => {
@@ -1000,7 +1064,10 @@ impl State {
                 self.limit = 50;
                 self.summary();
             }
-            Message::Hover(hover) => self.hover = hover,
+            Message::Hover(hover) => {
+                self.block_focus = false;
+                self.hover = hover;
+            }
             Message::Highlight(key) => {
                 self.highlight = if self.highlight.as_ref() == Some(&key) {
                     None
@@ -1012,27 +1079,79 @@ impl State {
                 self.grid_cache.clear();
             }
             Message::Zoom(factor, anchor) => {
+                self.range_mode = 3;
                 let anchor = anchor.or_else(|| self.selection.map(|s| s.start + s.duration() / 2));
                 self.view = model::zoom(self.day, self.view, factor, anchor);
                 self.hover = None;
                 self.cache.clear();
                 self.grid_cache.clear();
             }
-            Message::Fit => {
-                self.view = self.day;
-                self.cache.clear();
-                self.grid_cache.clear();
+            Message::RecMenu => self.rec_menu = !self.rec_menu,
+            Message::ToastExpired(started) => {
+                if self.tag_toast.is_some_and(|(_, time)| time == started) {
+                    self.tag_toast = None;
+                }
             }
-            Message::Pan(value) => {
-                let span = self.view.duration();
-                let start = self.day.start
-                    + (value.clamp(0.0, 1.0) * (self.day.duration() - span) as f64).round() as i64;
-                self.view = Range::new(start, start + span);
+            Message::ExpandTrack(track) => {
+                if (2..=3).contains(&track) {
+                    self.expanded_tracks[track] = !self.expanded_tracks[track];
+                    self.cache.clear();
+                    self.grid_cache.clear();
+                }
+            }
+            Message::SelectionTag(name) => self.selection_tag = name,
+            Message::ApplySelectionTag => {
+                let task = self.edit(tagging::Edit::Open);
+                if self.selection_tag.is_empty() {
+                    return task;
+                }
+                let _ = self.edit(tagging::Edit::Name(self.selection_tag.clone()));
+                return self.edit(tagging::Edit::Save(false));
+            }
+            Message::ExcludeSelection => {
+                self.set_screen("Settings");
+                return self.edit_settings(settings::Edit::Delete);
+            }
+            Message::TagGap(range) => {
+                let _ = self.update(Message::Select(Some(range)));
+                return self.edit(tagging::Edit::Open);
+            }
+            Message::SummaryFilter(value) => {
+                self.summary_search = value;
+                self.summary();
+            }
+            Message::ExpandSummary(key) => {
+                self.expanded_summary = if self.expanded_summary.as_ref() == Some(&key) {
+                    None
+                } else {
+                    Some(key)
+                };
+                self.summary();
+            }
+            Message::ReviewGaps => {
+                let gaps = self.day_gaps();
+                if let Some(range) = gaps
+                    .iter()
+                    .find(|r| self.selection.is_none_or(|s| r.start >= s.end))
+                    .or(gaps.first())
+                    .copied()
+                {
+                    return self.update(Message::Select(Some(range)));
+                }
+            }
+            Message::DayRange(mode) => {
+                self.range_mode = mode;
+                self.view = match mode {
+                    2 => self.selection.unwrap_or(self.view),
+                    1 => self.active_hours().unwrap_or(self.day),
+                    _ => self.day,
+                };
+                self.hover = None;
                 self.cache.clear();
                 self.grid_cache.clear();
-                self.hover = None;
             }
             Message::PanBy(value) => {
+                self.range_mode = 3;
                 let span = self.view.duration();
                 let start = (self.view.start + (value * span as f64) as i64)
                     .clamp(self.day.start, self.day.end - span);
@@ -1040,18 +1159,6 @@ impl State {
                 self.cache.clear();
                 self.grid_cache.clear();
                 self.hover = None;
-            }
-            Message::Tracks => self.tracks_menu = !self.tracks_menu,
-            Message::Visible(index, visible) => {
-                self.shown[index] = visible;
-                self.rebuild();
-            }
-            Message::Move(index, delta) => {
-                let next = (index as i32 + delta) as usize;
-                if next < self.order.len() {
-                    self.order.swap(index, next);
-                    self.rebuild();
-                }
             }
             Message::More => self.limit += 50,
             Message::OpenUrl(url) => open_url(url),
@@ -1077,7 +1184,12 @@ impl State {
             }
             #[cfg(target_os = "linux")]
             Message::PortalThemeChanged(None) => {}
-            Message::Start => self.start(),
+            Message::Start => {
+                self.start();
+                if matches!(self.screen, "Tags" | "Rules") {
+                    return self.refresh_management();
+                }
+            }
             Message::AutoStart(enabled) => match startup::SystemStartup::new()
                 .and_then(|mut provider| startup::set_enabled(&mut provider, enabled))
             {
@@ -1088,6 +1200,7 @@ impl State {
                 Err(error) => self.autostart_error = error,
             },
             Message::Pause(duration) => {
+                self.rec_menu = false;
                 if let Some(runtime) = self.runtime.as_ref() {
                     if let Err(error) = runtime.pause(duration) {
                         self.error = error;
@@ -1098,6 +1211,7 @@ impl State {
                 }
             }
             Message::Resume => {
+                self.rec_menu = false;
                 if let Some(runtime) = self.runtime.as_ref() {
                     runtime.resume();
                     if let Some(status) = runtime.status() {
@@ -1133,6 +1247,45 @@ impl State {
             }
             Message::Key(key, modifiers) => {
                 use keyboard::key::Named;
+                if self.rec_menu && key == keyboard::Key::Named(Named::Escape) {
+                    self.rec_menu = false;
+                    return Task::none();
+                }
+                if self.screen == "Day"
+                    && self.editor.is_none()
+                    && self.rail_focus.is_none()
+                    && modifiers.alt()
+                    && matches!(key, keyboard::Key::Named(Named::ArrowDown | Named::ArrowUp))
+                {
+                    let blocks: Vec<_> = self
+                        .visible
+                        .iter()
+                        .flat_map(|&t| self.filtered[t].iter().map(move |&i| (t, i)))
+                        .collect();
+                    if !blocks.is_empty() {
+                        let old = self.hover.and_then(|h| blocks.iter().position(|b| *b == h));
+                        let next = if key == keyboard::Key::Named(Named::ArrowUp) {
+                            old.map(|i| (i + blocks.len() - 1) % blocks.len())
+                                .unwrap_or(blocks.len() - 1)
+                        } else {
+                            old.map(|i| (i + 1) % blocks.len()).unwrap_or(0)
+                        };
+                        let (track, index) = blocks[next];
+                        let _ = self
+                            .update(Message::Select(Some(self.all[track].segments[index].range)));
+                        self.hover = Some((track, index));
+                        self.block_focus = true;
+                    }
+                    return Task::none();
+                }
+
+                if key == keyboard::Key::Named(Named::Tab) && self.rail_focus.is_none() {
+                    return if modifiers.shift() {
+                        widget::operation::focus_previous()
+                    } else {
+                        widget::operation::focus_next()
+                    };
+                }
                 if self.editor.is_none() && key == keyboard::Key::Named(Named::F6) {
                     self.rail_focus = if self.rail_focus.is_some() {
                         None
@@ -1158,7 +1311,7 @@ impl State {
                             }
                             keyboard::Key::Named(Named::Enter | Named::Space) => {
                                 return self.update(if index == 5 {
-                                    self.recording_action()
+                                    Message::RecMenu
                                 } else {
                                     Message::Screen(
                                         ["Day", "Week", "Tags", "Rules", "Settings"][index],
@@ -1167,7 +1320,12 @@ impl State {
                             }
                             keyboard::Key::Named(Named::Escape | Named::Tab) => {
                                 self.rail_focus = None;
-                                return widget::operation::focus("activity-search");
+                                self.search_open = true;
+                                return widget::operation::focus(if self.screen == "Day" {
+                                    "day-filter"
+                                } else {
+                                    "activity-search"
+                                });
                             }
                             _ => {}
                         }
@@ -1213,25 +1371,14 @@ impl State {
                         _ => {}
                     }
                 }
-                if self.screen == "Day" && self.editor.is_none() && modifiers.alt() {
-                    let delta = match key {
-                        keyboard::Key::Named(keyboard::key::Named::ArrowUp) => -0.05,
-                        keyboard::Key::Named(keyboard::key::Named::ArrowDown) => 0.05,
-                        _ => 0.0,
-                    };
-                    if delta != 0.0 {
-                        if let pane_grid::Node::Split { id, ratio, .. } = self.day_panes.layout() {
-                            return self.update(Message::ResizeDay(pane_grid::ResizeEvent {
-                                split: *id,
-                                ratio: ratio + delta,
-                            }));
-                        }
-                    }
-                }
                 if modifiers.command()
                     && matches!(&key,keyboard::Key::Character(c)if c.eq_ignore_ascii_case("z"))
                 {
-                    return self.edit(tagging::Edit::Undo);
+                    let task = self.edit(tagging::Edit::Undo);
+                    if matches!(self.screen, "Tags" | "Rules") {
+                        return Task::batch([task, self.refresh_management()]);
+                    }
+                    return task;
                 }
                 if self.editor.is_some() {
                     return match key {
@@ -1258,7 +1405,14 @@ impl State {
                 if modifiers.command()
                     && matches!(&key,keyboard::Key::Character(c)if c.eq_ignore_ascii_case("f"))
                 {
-                    return widget::operation::focus("activity-search");
+                    self.search_open = true;
+                    return widget::operation::focus(if self.screen == "Day" {
+                        "day-filter"
+                    } else if self.screen == "Tags" {
+                        "manager-tag-search"
+                    } else {
+                        "activity-search"
+                    });
                 }
                 let message = match key {
                     keyboard::Key::Named(keyboard::key::Named::ArrowLeft) => {
@@ -1319,8 +1473,14 @@ impl State {
     }
     fn app_icon<'a>(&'a self, app: &str, app_name: &str) -> Element<'a, Message> {
         match cached_app_icon(&self.icons, app, app_name) {
-            Some(AppIcon::Png(handle)) => image(handle.clone()).width(20).height(20).into(),
-            Some(AppIcon::Svg(handle)) => svg(handle.clone()).width(20).height(20).into(),
+            Some(AppIcon::Png(handle)) => image(handle.clone())
+                .width(design::APP_ICON)
+                .height(design::APP_ICON)
+                .into(),
+            Some(AppIcon::Svg(handle)) => svg(handle.clone())
+                .width(design::APP_ICON)
+                .height(design::APP_ICON)
+                .into(),
             None => {
                 let rgb = model::color(app_name);
                 container(
@@ -1334,339 +1494,18 @@ impl State {
                     )
                     .size(11),
                 )
-                .width(20)
-                .height(20)
-                .center(20)
+                .width(design::APP_ICON)
+                .height(design::APP_ICON)
+                .center(design::APP_ICON)
                 .style(move |_: &Theme| container::Style {
                     background: Some(Color::from_rgb(rgb[0], rgb[1], rgb[2]).into()),
-                    text_color: Some(Color::WHITE),
+                    text_color: Some(design::Palette::new(true).accent_ink),
                     border: iced::Border::default().rounded(4),
                     ..container::Style::default()
                 })
                 .into()
             }
         }
-    }
-    fn day_view(&self) -> Element<'_, Message> {
-        let mut metrics = row![].spacing(10);
-        for (label, value) in [
-            "ACTIVE TIME",
-            "AWAY TIME",
-            "TAGGED TIME",
-            "UNTAGGED ACTIVITY",
-        ]
-        .into_iter()
-        .zip(self.metrics)
-        {
-            metrics = metrics.push(
-                container(
-                    column![
-                        text(tr(label)).size(10),
-                        text(model::duration(value)).size(24)
-                    ]
-                    .spacing(2),
-                )
-                .width(Length::Fill)
-                .padding(10)
-                .style(panel),
-            );
-        }
-        let mode = if self.fixture {
-            "Preview · 5,000 generated events · sample data is never saved"
-        } else {
-            "Recorded activity"
-        };
-        let panes = pane_grid::PaneGrid::new(&self.day_panes, |_, pane, _| {
-            pane_grid::Content::new(match pane {
-                DayPane::Timeline => self.day_timeline(),
-                DayPane::Summary => self.day_summary(),
-            })
-        })
-        .spacing(10)
-        .min_size(160)
-        .on_resize(6, Message::ResizeDay);
-        column![
-            metrics,
-            row![
-                text(tr(mode)).size(12),
-                space::horizontal(),
-                text(tr("Drag divider to resize · Alt ↑/↓")).size(10)
-            ],
-            panes
-        ]
-        .spacing(10)
-        .height(Length::Fill)
-        .into()
-    }
-    fn day_timeline(&self) -> Element<'_, Message> {
-        let heading = row![
-            text(tr("Activity timeline")).size(15),
-            space::horizontal(),
-            button(text(tr("Tracks"))).on_press(Message::Tracks),
-            button(text(tr("−"))).on_press(Message::Zoom(1.0 / 0.9, None)),
-            text(if self.view == self.day {
-                tr("Full day")
-            } else {
-                model::duration(self.view.duration())
-            })
-            .size(12),
-            button(text(tr("+"))).on_press(Message::Zoom(0.9, None)),
-            button(text(tr("Fit day"))).on_press(Message::Fit)
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center);
-        let mut timeline_body = column![heading].spacing(8);
-        if self.tracks_menu {
-            let mut menu = column![].spacing(4);
-            for (index, track) in self.order.iter().enumerate() {
-                let up = (index > 0).then_some(Message::Move(index, -1));
-                let down = (index + 1 < self.order.len()).then_some(Message::Move(index, 1));
-                menu = menu.push(
-                    row![
-                        checkbox(self.shown[*track])
-                            .label(tr(self.all[*track].name))
-                            .on_toggle(move |value| Message::Visible(*track, value)),
-                        space::horizontal(),
-                        button(text(tr("↑"))).on_press_maybe(up),
-                        button(text(tr("↓"))).on_press_maybe(down)
-                    ]
-                    .spacing(8),
-                );
-            }
-            timeline_body = timeline_body.push(menu);
-        }
-        let labels = self.visible.iter().fold(
-            column![container(text(tr("LOCAL TIME")).size(10))
-                .height(timeline::RULER)
-                .center_y(timeline::RULER)],
-            |column, index| {
-                column.push(
-                    container(text(tr(self.all[*index].name)).size(12))
-                        .height(timeline::ROW)
-                        .center_y(timeline::ROW),
-                )
-            },
-        );
-        let plot = timeline::canvas(timeline::Timeline {
-            tracks: &self.all,
-            filtered: &self.filtered,
-            visible: &self.visible,
-            view: self.view,
-            selection: self.selection,
-            highlight: self.highlight.as_deref(),
-            grid_cache: &self.grid_cache,
-            cache: &self.cache,
-            stats: &self.stats,
-            icons: &self.icons,
-        });
-        let chart: Element<'_, Message> = if let Some(segment) = self
-            .hover
-            .and_then(|(track, index)| self.all.get(track)?.segments.get(index))
-        {
-            let details = column![
-                text(localization::segment_label(segment)).size(14),
-                text(
-                    if matches!(segment.bucket, "computer" | "afk" | "derived") {
-                        localization::error(&segment.detail)
-                    } else {
-                        segment.detail.to_string()
-                    }
-                )
-                .size(12),
-                text(format!(
-                    "{}–{} · {}",
-                    model::time_label(segment.range.start),
-                    model::time_label(segment.range.end),
-                    model::duration(segment.range.duration())
-                ))
-                .size(12)
-            ]
-            .spacing(5);
-            let details: Element<'_, Message> = if let (Some(app), Some(app_name)) =
-                (segment.app.as_deref(), segment.app_name.as_deref())
-            {
-                row![self.app_icon(app, app_name), details]
-                    .spacing(8)
-                    .align_y(Alignment::Center)
-                    .into()
-            } else {
-                details.into()
-            };
-            tooltip(
-                plot,
-                container(details).padding(10),
-                tooltip::Position::FollowCursor,
-            )
-            .style(panel)
-            .into()
-        } else {
-            plot.into()
-        };
-        let pan = (self.view.start - self.day.start) as f64
-            / (self.day.duration() - self.view.duration()).max(1) as f64;
-        timeline_body=timeline_body.push(row![container(labels).width(124),chart].spacing(8)).push(row![text(tr("Pan across day")).size(10).width(124),slider(0.0..=1.0,pan,Message::Pan).step(0.001)].spacing(8)).push(text(tr("Active · AFK · Sleep · Locked · Paused · No recording · Unobserved (diagnostic)   |   Drag to select · Shift-click to extend · Double-click a block · Wheel to zoom")).size(10));
-        container(
-            scrollable(timeline_body.padding(iced::Padding {
-                right: 12.0,
-                ..iced::Padding::ZERO
-            }))
-            .height(Length::Fill),
-        )
-        .padding(12)
-        .height(Length::Fill)
-        .style(panel)
-        .into()
-    }
-    fn day_summary(&self) -> Element<'_, Message> {
-        let selection = self
-            .selection
-            .map(|s| {
-                localized(
-                    "Selection {start}–{end} · {duration}",
-                    &[
-                        ("start", model::time_label(s.start)),
-                        ("end", model::time_label(s.end)),
-                        ("duration", model::duration(s.duration())),
-                    ],
-                )
-            })
-            .unwrap_or_else(|| tr("Whole day"));
-        let selection_bar = row![
-            text(selection).size(14),
-            space::horizontal(),
-            button(text(tr("Clear"))).on_press(Message::Select(None)),
-            button(text(tr("Tag selection ⏎")))
-                .on_press_maybe(self.selection.map(|_| Message::Edit(tagging::Edit::Open)))
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center);
-        let tabs = ["Tags", "Applications", "Documents"]
-            .into_iter()
-            .enumerate()
-            .fold(row![].spacing(6), |row, (index, label)| {
-                row.push(button(text(tr(label))).on_press(Message::Tab(index)).style(
-                    if index == self.tab {
-                        button::primary
-                    } else {
-                        button::secondary
-                    },
-                ))
-            });
-        let total = self.rows.iter().map(|row| row.duration).sum();
-        let tabs = row![
-            tabs,
-            space::horizontal(),
-            text(localized(
-                "{duration} observed",
-                &[("duration", model::duration(total))]
-            ))
-            .size(12)
-        ]
-        .align_y(Alignment::Center);
-        let mut body = column![].spacing(3);
-        for entry in self.rows.iter().take(self.limit) {
-            let rgb = entry.color;
-            let icon: Element<'_, Message> = if let (Some(app), Some(app_name)) =
-                (entry.app.as_deref(), entry.app_name.as_deref())
-            {
-                self.app_icon(app, app_name)
-            } else {
-                container(space::horizontal())
-                    .width(10)
-                    .height(10)
-                    .style(move |_: &Theme| container::Style {
-                        background: Some(Color::from_rgb(rgb[0], rgb[1], rgb[2]).into()),
-                        ..container::Style::default()
-                    })
-                    .into()
-            };
-            let mut label = row![].spacing(8);
-            if self.tab == 1 {
-                label = label.push(
-                    text(if self.highlight.as_deref() == Some(entry.key.as_ref()) {
-                        "▾"
-                    } else {
-                        "▸"
-                    })
-                    .size(13),
-                );
-            }
-            let label = label
-                .push(icon)
-                .push(
-                    text(if self.tab == 0 && entry.key.as_ref() == "untagged" {
-                        tr("Untagged")
-                    } else {
-                        entry.label.to_string()
-                    })
-                    .size(13),
-                )
-                .spacing(8)
-                .align_y(Alignment::Center);
-            let style = if self.highlight.as_deref() == Some(entry.key.as_ref()) {
-                button::primary
-            } else {
-                button::text
-            };
-            body = body.push(
-                row![
-                    button(label)
-                        .on_press(Message::Highlight(entry.key.to_string()))
-                        .style(style)
-                        .width(Length::Fill),
-                    text(model::duration(entry.duration)).size(13).width(90),
-                    text(format!("{:.1}%", entry.share)).size(13).width(78)
-                ]
-                .align_y(Alignment::Center),
-            );
-            if self.tab == 1 && self.highlight.as_deref() == Some(entry.key.as_ref()) {
-                let mut documents =
-                    column![text(tr("Documents / pages · most time first")).size(11)].spacing(6);
-                for document in &self.documents {
-                    documents = documents.push(
-                        row![
-                            text(document.label.as_ref()).size(12).width(Length::Fill),
-                            text(model::duration(document.duration)).size(12).width(90),
-                            text(format!("{:.1}%", document.share)).size(12).width(78)
-                        ]
-                        .spacing(8)
-                        .align_y(Alignment::Center),
-                    );
-                }
-                if self.documents.is_empty() {
-                    documents = documents.push(
-                        text(tr(
-                            "No recorded document titles for this application in this range.",
-                        ))
-                        .size(12),
-                    );
-                }
-                body = body.push(
-                    container(documents)
-                        .padding(iced::Padding {
-                            top: 4.0,
-                            right: 0.0,
-                            bottom: 8.0,
-                            left: 36.0,
-                        })
-                        .width(Length::Fill),
-                );
-            }
-        }
-        if self.rows.is_empty() {
-            body = body.push(
-                text(tr(if self.search.is_empty() {
-                    "No activity in this range yet."
-                } else {
-                    "No matching activity."
-                }))
-                .size(13),
-            );
-        }
-        if self.rows.len() > self.limit {
-            body = body.push(button(text(tr("Show 50 more"))).on_press(Message::More));
-        }
-        container(column![selection_bar,tabs,row![text(tr("Project / application / document")).size(10).width(Length::Fill),text(tr("Duration")).size(10).width(90),text(tr("Range share")).size(10).width(78)],scrollable(body).height(Length::Fill),text(tr("Shares refer to the selected time range. Overlaps within one item are counted once.")).size(10)].spacing(7)).padding(12).height(Length::Fill).style(panel).into()
     }
     fn settings(&self) -> Element<'_, Message> {
         let mut backend=column![text(tr("Status & permissions")).size(22),text(tr("Live collector status. macOS and Wayland still require OS permissions/integration.")).size(13)].spacing(12);
@@ -1746,6 +1585,12 @@ impl State {
             column![
                 container({
                     let mut languages = column![
+                        text(tr("General")).size(design::HEADING),
+                        button(text(localized(
+                            "Theme: {theme}",
+                            &[("theme", tr(self.theme_preference.label()))]
+                        )))
+                        .on_press(Message::Theme),
                         button(text(tr("System default"))).on_press(Message::Language(None)),
                         text(localized(
                             "Language: {language}",
@@ -1803,15 +1648,6 @@ impl State {
         )
         .into()
     }
-    fn recording_action(&self) -> Message {
-        if self.runtime.is_none() && !self.fixture {
-            Message::Start
-        } else if self.status.state == "paused" {
-            Message::Resume
-        } else {
-            Message::Pause(Some(900_000))
-        }
-    }
     fn view(&self, _id: window::Id) -> Element<'_, Message> {
         widget::responsive(move |size| self.view_sized(size.width)).into()
     }
@@ -1823,6 +1659,9 @@ impl State {
             return self.onboarding();
         }
         let narrow = design::narrow(width);
+        let navigation = design::navigation_metrics(localization::current());
+        let rail_item = navigation.item_width;
+        let rail_width = design::RAIL.max(rail_item + 2.0 * design::RAIL_INSET as f32);
         let palette = design::Palette::new(self.theme.palette().background.r < 0.5);
         let logo: Element<'_, Message> = image(image::Handle::from_bytes(crate::branding::logo(
             self.theme.palette().background.r < 0.5,
@@ -1830,35 +1669,46 @@ impl State {
         .width(design::LOGO)
         .height(design::LOGO)
         .into();
-        let mut items = vec![container(logo).center_x(design::TARGET).into()];
-        for (index, (screen, icon)) in [
-            ("Day", "▤"),
-            ("Week", "▦"),
-            ("Tags", "◇"),
-            ("Rules", "≡"),
-            ("Settings", "⚙"),
-        ]
-        .into_iter()
-        .enumerate()
+        let mut items = vec![container(logo)
+            .center_x(rail_item)
+            .center_y(design::RAIL_ITEM)
+            .into()];
+        for (index, screen) in ["Day", "Week", "Tags", "Rules", "Settings"]
+            .into_iter()
+            .enumerate()
         {
             items.push(
                 button(
                     column![
-                        text(icon).size(design::HEADING),
-                        text(tr(screen)).size(design::LABEL)
+                        design::rail_icon(
+                            screen,
+                            if screen == self.screen {
+                                palette.accent_text
+                            } else {
+                                palette.text2
+                            }
+                        ),
+                        text(tr(screen))
+                            .size(design::LABEL)
+                            .width(Length::Fill)
+                            .align_x(Alignment::Center)
+                            .wrapping(iced::widget::text::Wrapping::None)
+                            .shaping(iced::widget::text::Shaping::Advanced)
                     ]
-                    .align_x(Alignment::Center),
+                    .align_x(Alignment::Center)
+                    .spacing(design::SMALL_GAP),
                 )
                 .on_press(Message::Screen(screen))
-                .width(design::TARGET)
-                .height(design::TARGET)
+                .padding(design::CONTROL_GAP as u16)
+                .width(rail_item)
+                .height(navigation.item_height)
                 .style(move |_, status| {
                     let active = screen == self.screen;
-                    button::Style {
+                    widget::button::Style {
                         background: Some(
                             if active {
                                 palette.accent_dim
-                            } else if matches!(status, button::Status::Hovered) {
+                            } else if matches!(status, widget::button::Status::Hovered) {
                                 palette.hover
                             } else {
                                 palette.side
@@ -1885,36 +1735,56 @@ impl State {
                 .into(),
             );
         }
-        let rec = self.recording_action();
+        let rec = Message::RecMenu;
         items.push(
             tooltip(
                 button(
-                    text(if self.status.state == "paused" {
-                        "Ⅱ REC"
-                    } else if matches!(self.status.state.as_str(), "tracking" | "away" | "locked") {
-                        "● REC"
-                    } else {
-                        "○ REC"
-                    })
-                    .size(design::LABEL)
-                    .font(design::MONO),
+                    column![
+                        text(if self.status.state == "paused" {
+                            "Ⅱ"
+                        } else if matches!(
+                            self.status.state.as_str(),
+                            "tracking" | "away" | "locked" | "asleep"
+                        ) {
+                            "●"
+                        } else {
+                            "○"
+                        })
+                        .size(design::BODY),
+                        text("REC").size(design::CAPTION).font(design::MONO)
+                    ]
+                    .align_x(Alignment::Center)
+                    .width(Length::Fill),
                 )
                 .on_press(rec)
-                .width(design::TARGET)
-                .height(design::TARGET)
-                .style(move |_, _| button::Style {
+                .width(rail_item)
+                .height(navigation.item_height)
+                .style(move |_, _| widget::button::Style {
                     background: Some(
                         if self.status.state == "paused" {
                             palette.away_dim
-                        } else {
+                        } else if matches!(
+                            self.status.state.as_str(),
+                            "tracking" | "away" | "locked" | "asleep"
+                        ) {
                             palette.accent_dim
+                        } else {
+                            Color {
+                                a: 0.1,
+                                ..palette.danger
+                            }
                         }
                         .into(),
                     ),
                     text_color: if self.status.state == "paused" {
                         palette.away_text
-                    } else {
+                    } else if matches!(
+                        self.status.state.as_str(),
+                        "tracking" | "away" | "locked" | "asleep"
+                    ) {
                         palette.accent_text
+                    } else {
+                        palette.danger_text
                     },
                     border: iced::Border {
                         width: if self.rail_focus == Some(5) { 2.0 } else { 0.0 },
@@ -1941,8 +1811,8 @@ impl State {
             .into()
         } else {
             container(column(items).spacing(design::SMALL_GAP))
-                .padding(design::RAIL_PADDING)
-                .width(design::RAIL)
+                .padding(design::RAIL_INSET)
+                .width(rail_width)
                 .height(Length::Fill)
                 .style(move |_| container::Style {
                     background: Some(palette.side.into()),
@@ -1950,83 +1820,14 @@ impl State {
                 })
                 .into()
         };
-        let date = row![
-            button(text(tr("‹"))).on_press(Message::Shift(-1)),
-            text_input(&tr("YYYY-MM-DD"), &self.date_text)
-                .on_input(Message::Date)
-                .width(130),
-            button(text(tr("›"))).on_press(Message::Shift(1)),
-            button(text(tr("Today"))).on_press(Message::Today)
-        ]
-        .spacing(design::CONTROL_GAP)
-        .align_y(Alignment::Center);
-        let search = text_input(&tr("Search activity · Ctrl/Cmd F"), &self.search)
-            .on_input(Message::Search)
-            .id("activity-search");
-        let toolbar: Element<'_, Message> = if narrow {
-            column![date, search].spacing(design::GAP).into()
-        } else {
-            row![
-                date,
-                space::horizontal(),
-                search.width(design::SEARCH_WIDTH)
-            ]
-            .spacing(design::GAP)
-            .align_y(Alignment::Center)
-            .into()
-        };
-        let control: Element<'_, Message> = if self.runtime.is_none() {
-            button(text(tr("Start recording")))
-                .on_press(Message::Start)
-                .into()
-        } else if self.status.state == "paused" {
-            button(text(tr("Resume"))).on_press(Message::Resume).into()
-        } else {
-            row![
-                button(text(tr("Pause"))).on_press(Message::Pause(None)),
-                button(text(tr("15 min"))).on_press(Message::Pause(Some(900_000)))
-            ]
-            .spacing(design::CONTROL_GAP)
-            .into()
-        };
-        let title = column![
-            text(tr(if self.screen == "Day" {
-                "Day overview"
-            } else {
-                self.screen
-            }))
-            .size(design::TITLE),
-            text(localization::date_label(self.date)).size(design::META)
-        ]
-        .spacing(2);
-        let actions = row![
-            text(self.status_label()).size(design::BODY),
-            control,
-            button(text(localized(
-                "Theme: {theme}",
-                &[("theme", tr(self.theme_preference.label()))]
-            )))
-            .on_press(Message::Theme),
-            button(text(tr("Quit"))).on_press(Message::Quit)
-        ]
-        .spacing(design::CONTROL_GAP)
-        .align_y(Alignment::Center);
-        let heading: Element<'_, Message> = if narrow {
-            column![title, actions.wrap()].spacing(design::GAP).into()
-        } else {
-            row![title, space::horizontal(), actions]
-                .spacing(design::CONTROL_GAP)
-                .align_y(Alignment::Center)
-                .into()
-        };
         let content = if self.screen == "Day" {
-            self.day_view()
-        } else if matches!(self.screen, "Overview" | "Week" | "Reports") {
+            self.day_view(narrow)
+        } else if self.screen == "Week" {
+            self.week_view(narrow)
+        } else if matches!(self.screen, "Overview" | "Reports") {
             self.reports_view()
-        } else if self.screen == "Tags" {
-            self.tags_view()
-        } else if self.screen == "Rules" {
-            self.rules_view()
+        } else if matches!(self.screen, "Tags" | "Rules") {
+            self.management_view(narrow)
         } else if self.screen == "Settings" {
             self.settings()
         } else {
@@ -2046,34 +1847,31 @@ impl State {
             .into()
         };
         // shortcut: legacy bodies retain desktop width; replace overflow per screen in slices 2–5.
-        let content: Element<'_, Message> = if narrow {
-            scrollable(
-                container(content)
-                    .width(design::LEGACY_WIDTH)
-                    .height(design::NARROW_BODY_HEIGHT),
-            )
-            .direction(scrollable::Direction::Horizontal(
-                scrollable::Scrollbar::default(),
-            ))
-            .into()
-        } else {
-            content
-        };
-        let mut main = column![
-            toolbar,
-            heading,
-            row![
-                button(text(tr("Overview"))).on_press(Message::Screen("Overview")),
-                button(text(tr("Reports"))).on_press(Message::Screen("Reports"))
-            ]
-            .spacing(design::GAP)
-        ]
-        .spacing(design::GAP);
-        main = main.push(
-            button(text(tr("Undo tag action · Ctrl/Cmd Z"))).on_press_maybe(
-                (!self.tag_undo.is_empty()).then_some(Message::Edit(tagging::Edit::Undo)),
-            ),
-        );
+        let content: Element<'_, Message> =
+            if narrow && !matches!(self.screen, "Day" | "Week" | "Tags" | "Rules") {
+                scrollable(
+                    container(content)
+                        .width(design::LEGACY_WIDTH)
+                        .height(design::NARROW_BODY_HEIGHT),
+                )
+                .direction(scrollable::Direction::Horizontal(
+                    scrollable::Scrollbar::default(),
+                ))
+                .into()
+            } else {
+                content
+            };
+        let mut main = column![].spacing(design::GAP);
+        if !matches!(self.screen, "Day" | "Week" | "Tags" | "Rules") {
+            main = main.push(text(tr(self.screen)).size(design::TITLE));
+            if self.search_open {
+                main = main.push(
+                    text_input(&tr("Search activity · Ctrl/Cmd F"), &self.search)
+                        .on_input(Message::Search)
+                        .id("activity-search"),
+                );
+            }
+        }
         if let Some(range) = self.away_range {
             main = main.push(
                 container(
@@ -2139,17 +1937,16 @@ impl State {
             main = main.push(
                 button(text(localization::error(error)).size(design::META))
                     .on_press(Message::Screen("Settings"))
-                    .style(button::danger),
+                    .style(design::destructive),
             );
         }
-        main = main
-            .push(content)
-            .push(row![
-                text(self.status_label()).size(11),
-                space::horizontal(),
-                text(tr("Draugr Time · Local & private")).size(11)
-            ])
-            .height(Length::Fill);
+        main = main.push(content).height(
+            if narrow && matches!(self.screen, "Week" | "Tags" | "Rules") {
+                Length::Shrink
+            } else {
+                Length::Fill
+            },
+        );
         // Track the background as a quad so tiny-skia repaints reused buffers after theme changes.
         let title = if self.screen == "Week" {
             "Week"
@@ -2158,34 +1955,24 @@ impl State {
         } else {
             self.screen
         };
-        let mut details = column![
+        let details = column![
             text(tr(title)).size(design::HEADING),
-            text(self.status_label()).size(design::BODY)
-        ]
-        .spacing(design::GAP);
-        for (label, value) in [
-            "ACTIVE TIME",
-            "AWAY TIME",
-            "TAGGED TIME",
-            "UNTAGGED ACTIVITY",
-        ]
-        .into_iter()
-        .zip(self.metrics)
-        {
-            details = details.push(column![
-                text(tr(label)).size(design::LABEL).color(palette.text2),
-                text(model::duration(value))
-                    .font(design::MONO)
-                    .size(design::HEADING)
-            ]);
-        }
-        details = details.push(space::vertical()).push(
+            space::vertical(),
             text(tr("Activity stays on this computer."))
                 .size(design::LABEL)
-                .color(palette.text3),
-        );
-        let right = container(details)
-            .padding(design::PADDING)
+                .color(palette.text3)
+        ];
+        let right_content: Element<'_, Message> = if self.screen == "Day" {
+            self.day_summary()
+        } else if self.screen == "Week" {
+            self.week_summary()
+        } else if matches!(self.screen, "Tags" | "Rules") {
+            self.management_panel()
+        } else {
+            details.into()
+        };
+        let right = container(right_content)
+            .padding(design::CARD_PADDING)
             .width(if narrow {
                 Length::Fill
             } else {
@@ -2195,25 +1982,48 @@ impl State {
                     design::PANEL
                 })
             })
-            .height(if narrow { Length::Shrink } else { Length::Fill })
+            .height(
+                if narrow && matches!(self.screen, "Day" | "Week" | "Tags" | "Rules") {
+                    Length::Fixed(design::NARROW_BODY_HEIGHT)
+                } else if narrow {
+                    Length::Shrink
+                } else {
+                    Length::Fill
+                },
+            )
             .style(move |_| container::Style {
                 background: Some(palette.side.into()),
-                border: iced::Border {
-                    width: 1.0,
-                    color: palette.line,
-                    ..Default::default()
-                },
                 ..Default::default()
             });
+        let right: Element<'_, Message> = if narrow {
+            right.into()
+        } else {
+            widget::stack![
+                right,
+                container(space::vertical())
+                    .width(1)
+                    .height(Length::Fill)
+                    .style(move |_| container::Style {
+                        background: Some(palette.line.into()),
+                        ..Default::default()
+                    })
+            ]
+            .into()
+        };
         let main = container(main)
             .padding(design::PADDING)
             .width(Length::Fill)
             .height(Length::Fill);
         let base: Element<'_, Message> = if narrow {
-            let main = main.height(design::NARROW_MAIN_HEIGHT);
-            container(scrollable(
-                column![sidebar, main, right].spacing(design::GAP),
-            ))
+            let main = if matches!(self.screen, "Week" | "Tags" | "Rules") {
+                main.height(Length::Shrink)
+            } else {
+                main.height(design::NARROW_MAIN_HEIGHT)
+            };
+            container(
+                scrollable(column![sidebar, main, right].spacing(design::GAP))
+                    .style(design::scrollbars),
+            )
         } else {
             container(row![sidebar, main, right])
         }
@@ -2225,6 +2035,32 @@ impl State {
             ..Default::default()
         })
         .into();
+        let base = if self.rec_menu {
+            widget::stack![
+                base,
+                container(self.rec_popover()).padding(iced::Padding {
+                    left: if narrow {
+                        design::PADDING as f32
+                    } else {
+                        rail_width + design::CONTROL_GAP as f32
+                    },
+                    top: if narrow {
+                        design::RAIL_ITEM.max(navigation.item_height)
+                            + 2.0 * design::TOP_PADDING as f32
+                            + design::CONTROL_GAP as f32
+                    } else {
+                        design::RAIL_INSET as f32
+                            + design::RAIL_ITEM
+                            + 5.0 * navigation.item_height
+                            + 6.0 * design::SMALL_GAP as f32
+                    },
+                    ..iced::Padding::ZERO
+                })
+            ]
+            .into()
+        } else {
+            base
+        };
         if self.editor.is_some() {
             let dialog = container(scrollable(column![
                 self.tag_editor(),
@@ -2288,6 +2124,22 @@ mod theme_render_tests {
     }
 
     #[test]
+    fn day_range_controls_and_lane_expansion_preserve_selection() {
+        let (mut state, _) = State::boot();
+        state.all = model::fixture(state.day);
+        state.rebuild();
+        let selection = Range::new(state.day.start + 1000, state.day.start + 5000);
+        state.selection = Some(selection);
+        let _ = state.update(Message::DayRange(2));
+        assert_eq!(state.view, selection);
+        let _ = state.update(Message::ExpandTrack(2));
+        assert!(state.expanded_tracks[2]);
+        assert_eq!(state.selection, Some(selection));
+        let _ = state.update(Message::DayRange(0));
+        assert_eq!(state.view, state.day);
+    }
+
+    #[test]
     fn shell_keeps_the_rail_and_panel_at_their_spec_widths() {
         let (mut state, _) = State::boot();
         state.fixture = true;
@@ -2325,7 +2177,7 @@ mod theme_render_tests {
             .collect();
         assert!(rectangles
             .iter()
-            .any(|r| r.x == 0.0 && r.width == 72.0 && r.height == 820.0));
+            .any(|r| r.x == 0.0 && r.width >= design::RAIL && r.height == 820.0));
         assert!(rectangles
             .iter()
             .any(|r| r.x == 936.0 && r.width == 344.0 && r.height == 820.0));
@@ -2875,136 +2727,6 @@ mod memory_tests {
         assert_eq!(state.filtered[2].len(), 1);
         let _ = state.update(Message::Search("old".into()));
         assert!(state.filtered[2].is_empty());
-    }
-}
-
-#[cfg(test)]
-mod panel_tests {
-    use super::*;
-    use iced::advanced::{layout, mouse, widget::Tree, Layout};
-    fn split(state: &State) -> (widget::pane_grid::Split, f32) {
-        match state.day_panes.layout() {
-            widget::pane_grid::Node::Split { id, ratio, .. } => (*id, *ratio),
-            _ => panic!("Day must have two vertically stacked panes"),
-        }
-    }
-    #[test]
-    fn resizing_preserves_selection_zoom_data_and_reopen_ratio() {
-        let (mut state, _) = State::boot();
-        state.all = model::fixture(state.day);
-        state.rebuild();
-        state.selection = Some(Range::new(state.day.start, state.day.start + 60_000));
-        state.view = Range::new(state.day.start, state.day.start + 3_600_000);
-        let old = (state.selection, state.view, state.all.clone());
-        let (id, _) = split(&state);
-        let _ = state.update(Message::ResizeDay(widget::pane_grid::ResizeEvent {
-            split: id,
-            ratio: 0.75,
-        }));
-        assert_eq!(split(&state).1, 0.75);
-        assert_eq!((state.selection, state.view, state.all.clone()), old);
-        state.release_day();
-        state.window = None;
-        let _ = state.open(true);
-        assert_eq!(split(&state).1, 0.75);
-        let _ = state.update(Message::Key(
-            keyboard::Key::Named(keyboard::key::Named::ArrowUp),
-            keyboard::Modifiers::ALT,
-        ));
-        assert!((split(&state).1 - 0.70).abs() < 0.001);
-    }
-    #[test]
-    fn extreme_ratios_keep_panes_inside_available_space() {
-        let (mut state, _) = State::boot();
-        let (id, before) = split(&state);
-        let _ = state.update(Message::ResizeDay(widget::pane_grid::ResizeEvent {
-            split: id,
-            ratio: f32::NAN,
-        }));
-        assert_eq!(split(&state).1, before);
-        for ratio in [-1.0, 0.0, 0.5, 1.0, 2.0] {
-            let _ = state.update(Message::ResizeDay(widget::pane_grid::ResizeEvent {
-                split: id,
-                ratio,
-            }));
-            let size = iced::Size::new(1000.0, 500.0);
-            let regions = state.day_panes.layout().pane_regions(10.0, 160.0, size);
-            assert_eq!(regions.len(), 2);
-            for region in regions.values() {
-                assert!(region.height >= 160.0);
-                assert!(region.y >= 0.0 && region.y + region.height <= size.height);
-            }
-        }
-    }
-    #[test]
-    fn native_divider_drag_emits_resize_without_selecting_activity() {
-        let (mut state, _) = State::boot();
-        state.all = model::fixture(state.day);
-        state.rebuild();
-        let mut view = state.day_view();
-        let renderer = iced::Renderer::new(iced::Font::DEFAULT, 16.0.into());
-        let size = iced::Size::new(1000.0, 700.0);
-        let viewport = iced::Rectangle::with_size(size);
-        let mut tree = Tree::new(view.as_widget());
-        let node = view.as_widget_mut().layout(
-            &mut tree,
-            &renderer,
-            &layout::Limits::new(iced::Size::ZERO, size),
-        );
-        let layout = Layout::new(&node);
-        let bounds = layout.children().last().unwrap().bounds();
-        let (axis, region, ratio) = state
-            .day_panes
-            .layout()
-            .split_regions(10.0, 160.0, bounds.size())
-            .into_values()
-            .next()
-            .unwrap();
-        let line = axis.split_line_bounds(region, ratio, 10.0);
-        let start = iced::Point::new(bounds.x + line.center_x(), bounds.y + line.center_y());
-        let end = iced::Point::new(start.x, start.y + 60.0);
-        assert_eq!(
-            view.as_widget().mouse_interaction(
-                &tree,
-                layout,
-                mouse::Cursor::Available(start),
-                &viewport,
-                &renderer
-            ),
-            mouse::Interaction::ResizingVertically
-        );
-        let mut messages = Vec::new();
-        for (event, point) in [
-            (
-                iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)),
-                start,
-            ),
-            (
-                iced::Event::Mouse(mouse::Event::CursorMoved { position: end }),
-                end,
-            ),
-            (
-                iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)),
-                end,
-            ),
-        ] {
-            view.as_widget_mut().update(
-                &mut tree,
-                &event,
-                layout,
-                mouse::Cursor::Available(point),
-                &renderer,
-                &mut iced::advanced::clipboard::Null,
-                &mut iced::advanced::Shell::new(&mut messages),
-                &viewport,
-            );
-        }
-        assert!(messages
-            .iter()
-            .any(|message| matches!(message, Message::ResizeDay(event) if event.ratio > ratio)));
-        assert!(!messages
-            .iter()
-            .any(|message| matches!(message, Message::Select(_))));
     }
 }
 

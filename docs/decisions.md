@@ -896,3 +896,105 @@ names retain the fallback rather than selecting another application's icon.
 - Iced 0.14 buttons do not provide keyboard focus. F6 enters/leaves the rail;
   arrows move its visible accent focus ring, Enter/Space activate, Escape/Tab
   return to search. No animation subscription, polling or storage changes.
+
+## 2026-10-23 — M12 slices 1–2: replace the shell controls and Day layout
+
+- Incorporate the documentation changes from PR #14 (Components and What moves
+  or disappears). This supersedes the earlier slice-1 decisions to preserve
+  the Day divider, the bottom summary, repeated totals/status and main-column
+  Overview/Reports navigation. The user explicitly requested both slices here.
+- Use shared secondary/ghost/primary/destructive/segmented/field styles. Default
+  buttons are secondary; an accent fill denotes the panel's commit action.
+  Wrap Iced's button with focus participation, Enter/Space activation and a
+  2 px token-colored focus ring because Iced 0.14 buttons are mouse-only.
+  Keep F6 rail navigation and add normal Tab/Shift+Tab traversal.
+- Keep date/range controls inside the timeline, timed pauses in the REC menu,
+  appearance in Settings → General and the full-report entry in Week. Quit
+  remains in the tray. A successful interval tag creates a six-second Undo
+  toast using one delayed task, not a recurring subscription.
+- The right panel is Whole day even while a tagging range is selected, matching
+  the supplied artboards. Range selection drives the action bar and editing;
+  summary shares use total observed duration, with the same denominator while
+  filtering. Panel filtering and expansion are independent of timeline search
+  and highlight. Keep selection/report interval mathematics unchanged.
+- Reuse the existing canvas, its data/grid caches and all existing tag editing,
+  overlap confirmation and undo operations. Add variable track geometry and
+  lane-aware hit testing; no database or watcher changes. Preserve stored tag
+  colors and use the specified categorical palette for applications/documents.
+- Derive untagged active gaps from activity minus actual tag ranges, excluding
+  the synthetic untagged blocks themselves. Review cycles through these gaps.
+  Default to locally rounded active hours; manual wheel zoom/pan disables
+  automatic fitting so a live refresh cannot undo the user's viewport.
+- Cache the hourly canvas separately. Compute bins on data rebuild, partitioning
+  UTC intervals into local hour buckets and retaining repeated/skipped hour
+  capacity, rather than assuming every local day is 24 hours. No new idle timer
+  or animation subscription is introduced. Motion remains slice 6.
+- Exclude reuses the existing range-history deletion confirmation in Settings;
+  it never deletes on the first click. Rule-made tag ranges have no persisted
+  origin, so do not guess AUTO badges or add a schema change in a design slice.
+- Use the supplied `Day — improved` PNGs, since canonical `day-dark.png` and
+  `day-light.png` were not present. Existing generated 5,000-event diagnostics
+  supply review data; no new demo mode or mockup sample data is shipped.
+- Keep selection actions, keyboard detail cards and Undo as canvas-pane overlays;
+  highlighting and selection must not resize the viewport and hide Documents.
+  Pixel aggregation is per lane, so dense events in one application cannot
+  erase a different application's lane at the same horizontal pixel.
+- Preserve accentInk on the specified categorical palette. For arbitrary stored
+  dark/mid-tone tag colors, select accessible white/black fallback ink instead
+  of changing users' colors. Hover/destructive styles also pass 4.5:1 tests.
+
+## 2026-10-23 — M12 slice 3: Week rendering and comparisons
+
+Week uses the existing Report calculation and local-day bounds for all totals,
+sessions, timesheet cells and gap review. The previous seven local dates are
+queried through the existing shared runtime; only tag totals survive that query,
+so previous-week intervals are not retained. Reports keep their existing date
+fields; opening a full report from Week explicitly carries the displayed dates.
+
+The Week canvas has the specified fixed 07:00–21:00 wall-clock axis. Tag and
+application lanes are aggregated to output pixels before drawing, keeping dense
+context visible with a one-pixel minimum; numeric totals and CSV still cover the
+complete seven local days. Computer-state bands remain available underneath
+application context; observed away intervals are hatched. Geometry is cached by
+data ownership, size, theme, highlight and current minute. No new subscription
+or idle timer is introduced. On narrow windows, Week uses the shell's outer
+vertical scroll and gives only its timesheet a horizontal scroll.
+
+## 2026-10-23 — Navigation width follows translated text
+
+The user requested automatic sizing after showing repeated label overflow in the
+rail. Its 72 px width is now a minimum: measure the five translated labels with
+Iced's actual bundled UI font and advanced shaping, add the shared control
+padding, and size every target to the widest label and tallest icon/text stack. Labels stay on one line;
+icons and text have an explicit gap. The horizontal narrow-window navigation
+uses the same widths and its existing horizontal scroll. The REC popover anchor
+follows the resulting rail width. Measurements are cached by language and font
+system version, so repeated views do not reshape labels while idle, and loading
+fonts or changing language cannot leave a stale width.
+
+## 2026-10-23 — M12 Tags and Rules keep storage semantics
+
+Slice 4 replaces the flat Tags page and stacked Rules form with a tree table / ordered
+list and editors in the existing right panel. Tag metadata changes and empty branch
+creation reuse scoped TagUndo transactions; changing a parent rejects cycles. Tree
+statistics stream and union raw ranges per subtree, including local-day boundaries,
+rather than retaining all historical ranges in the GUI. Current-week totals and rolling
+seven-day chart values are separate. Cached metadata loads run on a blocking worker,
+are discarded after navigation/close using a generation, and never run from view().
+Preview caches are released on close/navigation while unsaved field values survive;
+a pending history confirmation retains its checked snapshot.
+
+Rule order is persisted atomically as distinct descending priorities after validating
+the complete ID permutation inside the transaction. Drag handles and keyboard reachable
+up/down buttons share this operation. Case sensitivity uses the existing regex format
+(`(?i:...)`), with no schema change. Existing expressions with sibling groups retain
+their original meaning. The optional 30-day history action applies only the selected
+saved rule's winning matches and rechecks its preview under the write transaction;
+other rules and existing tags are preserved. Live preview remains seven days.
+
+The engine currently exposes app/title/url. Slice 4 retains URL and visibly disables
+Any; it does not invent path observations or expand the matching schema. ActivityWatch
+category import/export is explicitly a separate later M12 item requiring verified format
+research. Its import button is disabled with an explanatory tooltip; Export writes an
+explicitly versioned native Draugr Time JSON configuration, never an imitation AW file.
+Settings, tray, autostart and animations remain later slices.

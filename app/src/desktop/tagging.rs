@@ -41,6 +41,8 @@ pub struct Editor {
 }
 #[derive(Clone, Debug)]
 pub enum Edit {
+    #[cfg(test)]
+    Tag(i64),
     Open,
     Range(i64),
     Transform(i64, Range),
@@ -53,7 +55,6 @@ pub enum Edit {
     Cancel,
     Undo,
     Quick(i64),
-    Tag(i64),
     Color(String),
     Archive(bool),
     SaveTag,
@@ -217,6 +218,15 @@ impl State {
                             });
                             if self.editor.is_none() {
                                 self.away_range = None;
+                                let started = Instant::now();
+                                self.tag_toast = Some((Range::new(start, end), started));
+                                return Task::perform(
+                                    async move {
+                                        tokio::time::sleep(Duration::from_secs(6)).await;
+                                        started
+                                    },
+                                    Message::ToastExpired,
+                                );
                             }
                         }
                         Err(error) => self.error = error,
@@ -230,6 +240,7 @@ impl State {
             }
             Edit::Cancel => self.editor = None,
             Edit::Undo => {
+                self.tag_toast = None;
                 if let (Some(runtime), Some(undo)) = (&self.runtime, self.tag_undo.last().cloned())
                 {
                     let result = runtime.shared.storage.lock().unwrap().undo_tags(undo);
@@ -243,12 +254,13 @@ impl State {
                     }
                 }
             }
+            #[cfg(test)]
             Edit::Tag(id) => {
                 if let Some(t) = self.tags.iter().find(|t| t.id == id) {
                     self.editor = Some(Editor {
                         tag_id: Some(id),
-                        name: t.name.as_str().into(),
-                        color: t.color.as_deref().unwrap_or("").into(),
+                        name: t.name.clone(),
+                        color: t.color.clone().unwrap_or_default(),
                         archived: t.archived == 1,
                         ..Editor::default()
                     });
@@ -361,7 +373,9 @@ impl State {
                 );
             body = body.push(
                 row![
-                    button(text(tr("Save"))).on_press(edit(Edit::SaveTag)),
+                    button(text(tr("Save")))
+                        .on_press(edit(Edit::SaveTag))
+                        .style(design::primary),
                     button(text(tr("Delete…"))).on_press(edit(Edit::DeleteTag(false))),
                     button(text(tr("Cancel"))).on_press(edit(Edit::Cancel))
                 ]
@@ -380,7 +394,7 @@ impl State {
                     .push(
                         button(text(tr("Confirm delete")))
                             .on_press(edit(Edit::DeleteTag(true)))
-                            .style(button::danger),
+                            .style(design::destructive),
                     );
             }
             body = body.push(text(tr("Merge into (moves history, children and rules):")));
@@ -436,7 +450,8 @@ impl State {
                 } else {
                     "Save"
                 })))
-                .on_press(edit(Edit::Save(false))),
+                .on_press(edit(Edit::Save(false)))
+                .style(design::primary),
                 button(text(tr("Cancel"))).on_press(edit(Edit::Cancel))
             ]
             .spacing(8);
@@ -456,36 +471,6 @@ impl State {
             body = body.push(actions);
         }
         container(body).padding(12).style(panel).into()
-    }
-    pub fn tags_view(&self) -> Element<'_, Message> {
-        let mut body = column![text(tr(
-            "Tags · select a tag to rename, color, archive, merge or delete"
-        ))
-        .size(16)]
-        .spacing(6);
-        if self.tags.is_empty() {
-            body = body.push(text(tr(
-                "No tags yet. Select time in Day and press Enter to create one.",
-            )));
-        }
-        let mut tags: Vec<_> = self.tags.iter().collect();
-        tags.sort_by_key(|t| model::tag_path(&self.tags, t.id));
-        for tag in tags {
-            let id = tag.id;
-            body = body.push(
-                button(text(format!(
-                    "{}{}",
-                    model::tag_path(&self.tags, id),
-                    if tag.archived == 1 {
-                        tr(" (archived)")
-                    } else {
-                        String::new()
-                    }
-                )))
-                .on_press(Message::Edit(Edit::Tag(id))),
-            );
-        }
-        scrollable(body).into()
     }
 }
 

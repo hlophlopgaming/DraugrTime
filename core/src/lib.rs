@@ -419,7 +419,9 @@ pub use tagging::TagUndo;
 mod rules_tests;
 
 mod rules;
-pub use rules::{Rule, RuleMatch};
+pub use rules::{
+    literal_rule_pattern, rule_match_ranges, validate_rule_pattern, Rule, RuleCoverage, RuleMatch,
+};
 
 mod reports;
 pub use reports::{Archive, GroupBy, Report, ReportInterval, ReportRow};
@@ -429,3 +431,8 @@ mod report_tests;
 mod privacy;
 #[cfg(test)]
 mod privacy_tests;
+
+mod catalog;
+pub use catalog::TagStatistics;
+#[cfg(test)]
+mod catalog_tests;

@@ -1,6 +1,6 @@
 use super::{
     model::{self, Range, Track},
-    AppIcon, Message,
+    Message,
 };
 use iced::{
     keyboard, mouse,
@@ -8,7 +8,6 @@ use iced::{
     Color, Event, Point, Rectangle, Renderer, Size, Theme,
 };
 use std::{
-    collections::HashMap,
     sync::atomic::{AtomicU64, AtomicUsize, Ordering},
     time::Instant,
 };
@@ -21,7 +20,6 @@ fn wheel_zoom_factor(delta: mouse::ScrollDelta) -> f64 {
     0.9_f64.powf(steps.clamp(-10.0, 10.0))
 }
 
-pub const ROW: f32 = 45.0;
 pub const RULER: f32 = 32.0;
 #[derive(Default)]
 pub struct PaintStats {
@@ -53,18 +51,49 @@ pub struct Timeline<'a> {
     pub grid_cache: &'a canvas::Cache,
     pub cache: &'a canvas::Cache,
     pub stats: &'a PaintStats,
-    pub icons: &'a HashMap<String, AppIcon>,
-}
-pub fn should_draw_app_icon(track: usize, width: f32) -> bool {
-    track == 2 && width >= 28.0
+    pub lanes: [Vec<model::Summary>; 4],
+    pub gaps: Vec<Range>,
+    pub now: Option<i64>,
 }
 impl Timeline<'_> {
+    fn track_top(&self, track: usize) -> f32 {
+        RULER
+            + self
+                .visible
+                .iter()
+                .take_while(|&&t| t != track)
+                .map(|&t| super::design::track_height(t, self.lanes[t].len()))
+                .sum::<f32>()
+    }
+    fn lane_index(&self, track: usize, key: &str) -> Option<usize> {
+        self.lanes[track]
+            .iter()
+            .position(|r| r.key.as_ref() == key)
+            .or_else(|| {
+                self.lanes[track]
+                    .iter()
+                    .position(|r| r.key.as_ref() == "__other")
+            })
+    }
+    fn lane_hit(&self, track: usize, key: &str, y: f32) -> bool {
+        self.lanes[track].is_empty()
+            || self.lane_index(track, key).is_some_and(|lane| {
+                let top = self.track_top(track)
+                    + super::design::TRACK_HEAD
+                    + lane as f32 * super::design::LANE;
+                (top..top + super::design::LANE).contains(&y)
+            })
+    }
+
     fn hit(&self, point: Point, width: f32) -> Option<(usize, usize)> {
         if point.y < RULER {
             return None;
         }
-        let row = ((point.y - RULER) / ROW) as usize;
-        let track = *self.visible.get(row)?;
+        let track = self.visible.iter().copied().find(|&track| {
+            let top = self.track_top(track);
+            point.y >= top
+                && point.y < top + super::design::track_height(track, self.lanes[track].len())
+        })?;
         let ts = model::pixel_range(self.view, width, point.x, point.x).start;
         self.filtered[track]
             .iter()
@@ -72,7 +101,9 @@ impl Timeline<'_> {
             .copied()
             .find(|index| {
                 let segment = &self.tracks[track].segments[*index];
-                segment.range.start <= ts && segment.range.end > ts
+                segment.range.start <= ts
+                    && segment.range.end > ts
+                    && self.lane_hit(track, segment.key.as_ref(), point.y)
             })
             .map(|index| (track, index))
     }
@@ -218,6 +249,21 @@ impl canvas::Program<Message> for Timeline<'_> {
                 if state.double || drag.moved {
                     return Some(canvas::Action::capture());
                 }
+                if let Some(point) = point {
+                    if self.visible.contains(&0)
+                        && point.y >= self.track_top(0)
+                        && point.y < self.track_top(0) + super::design::track_height(0, 0)
+                    {
+                        let ts =
+                            model::pixel_range(self.view, bounds.width, point.x, point.x).start;
+                        if let Some(range) = self.gaps.iter().find(|r| r.start <= ts && r.end > ts)
+                        {
+                            return Some(
+                                canvas::Action::publish(Message::TagGap(*range)).and_capture(),
+                            );
+                        }
+                    }
+                }
                 let value = point
                     .and_then(|p| self.hit(p, bounds.width))
                     .map(|(track, index)| self.tracks[track].segments[index].range);
@@ -267,18 +313,9 @@ impl canvas::Program<Message> for Timeline<'_> {
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
         let started = Instant::now();
-        let palette = theme.palette();
-        let dark = palette.background.r < 0.5;
-        let muted = if dark {
-            Color::from_rgb8(146, 165, 179)
-        } else {
-            Color::from_rgb8(136, 149, 164)
-        };
-        let line = if dark {
-            Color::from_rgb8(42, 57, 69)
-        } else {
-            Color::from_rgb8(237, 240, 243)
-        };
+        let p = super::design::Palette::new(theme.palette().background.r < 0.5);
+        let muted = p.text3;
+        let line = p.grid_hour;
         let x = |ts: i64| {
             (ts - self.view.start) as f64 / self.view.duration().max(1) as f64 * bounds.width as f64
         };
@@ -307,96 +344,135 @@ impl canvas::Program<Message> for Timeline<'_> {
                         content: model::time_label(ts),
                         position: Point::new(left + 5.0, 8.0),
                         color: muted,
+                        font: super::design::MONO,
                         size: 11.0.into(),
                         ..Text::default()
                     });
                 }
                 ts += tick;
             }
-            for (row, _) in self.visible.iter().enumerate() {
-                let top = RULER + row as f32 * ROW;
+            let half = 30 * 60_000;
+            let mut ts = self.view.start.div_euclid(half) * half;
+            while ts < self.view.end {
+                if ts >= self.view.start && ts.rem_euclid(3_600_000) != 0 {
+                    let left = x(ts) as f32;
+                    frame.stroke(
+                        &Path::line(Point::new(left, RULER), Point::new(left, bounds.height)),
+                        Stroke::default().with_color(p.grid_half),
+                    );
+                }
+                ts += half;
+            }
+            for &track in self.visible {
+                let top = self.track_top(track);
+                let height = super::design::track_height(track, self.lanes[track].len());
                 frame.stroke(
                     &Path::line(
-                        Point::new(0.0, top + ROW),
-                        Point::new(bounds.width, top + ROW),
+                        Point::new(0.0, top + height),
+                        Point::new(bounds.width, top + height),
                     ),
                     Stroke::default().with_color(line),
                 );
             }
         });
         let base = self.cache.draw(renderer, bounds.size(), |frame| {
-            for (row, track) in self.visible.iter().enumerate() {
-                let top = RULER + row as f32 * ROW;
-                let mut previous = -1;
+            for track in self.visible {
+                let top = self.track_top(*track);
+                for (lane, _) in self.lanes[*track].iter().enumerate() {
+                    let y =
+                        top + super::design::TRACK_HEAD + lane as f32 * super::design::LANE + 5.0;
+                    frame.stroke(
+                        &Path::line(Point::new(0.0, y), Point::new(bounds.width, y)),
+                        Stroke {
+                            line_dash: canvas::LineDash {
+                                segments: &[1.0, 3.0],
+                                offset: 0,
+                            },
+                            ..Stroke::default().with_color(p.line)
+                        },
+                    );
+                }
+                let mut previous = vec![-1; self.lanes[*track].len().max(1)];
                 for index in &self.filtered[*track] {
                     let segment = &self.tracks[*track].segments[*index];
+                    if *track == 0 && segment.key.as_ref() == "untagged" {
+                        continue;
+                    }
                     let Some(range) = model::clip(segment.range, self.view) else {
                         continue;
                     };
                     let left = x(range.start) as f32;
                     let width = (x(range.end) - x(range.start)) as f32;
-                    if width < 1.0 && left.floor() as i32 == previous {
+                    let lane = if self.lanes[*track].is_empty() {
+                        0
+                    } else {
+                        self.lane_index(*track, &segment.key).unwrap_or(0)
+                    };
+                    if width < 1.0 && left.floor() as i32 == previous[lane] {
                         continue;
                     }
-                    previous = left.floor() as i32;
+                    previous[lane] = left.floor() as i32;
+                    let rgb = if *track == 1 && segment.key.as_ref() == "active" {
+                        [p.accent.r, p.accent.g, p.accent.b]
+                    } else {
+                        segment.color
+                    };
                     let color = Color {
-                        r: segment.color[0],
-                        g: segment.color[1],
-                        b: segment.color[2],
-                        a: if self
-                            .highlight
-                            .is_some_and(|key| key != segment.key.as_ref())
-                        {
-                            0.25
+                        r: rgb[0],
+                        g: rgb[1],
+                        b: rgb[2],
+                        a: if self.highlight.is_some_and(|key| {
+                            key != segment.key.as_ref()
+                                && !(*track == 3
+                                    && segment
+                                        .key
+                                        .strip_prefix(key)
+                                        .is_some_and(|suffix| suffix.starts_with('\0')))
+                        }) {
+                            if self.lanes[*track].is_empty() {
+                                0.16
+                            } else {
+                                0.30
+                            }
                         } else {
                             1.0
                         },
                     };
-                    frame.fill_rectangle(
-                        Point::new(left, top + 9.0),
-                        Size::new(width.max(1.0), ROW - 18.0),
-                        color,
+                    let (bar_top, bar_height) = if self.lanes[*track].is_empty() {
+                        (
+                            top + super::design::bar_offset(*track),
+                            super::design::bar_height(*track),
+                        )
+                    } else {
+                        let Some(lane) = self.lane_index(*track, segment.key.as_ref()) else {
+                            continue;
+                        };
+                        (
+                            top + super::design::TRACK_HEAD + lane as f32 * super::design::LANE,
+                            super::design::LANE_BAR,
+                        )
+                    };
+                    let bounds = Rectangle::new(
+                        Point::new(left, bar_top),
+                        Size::new((width - 1.0).max(1.0), bar_height),
                     );
-                    if should_draw_app_icon(*track, width) {
-                        let bounds = Rectangle::new(
-                            Point::new(left + 4.0, top + 12.0),
-                            Size::new(21.0, 21.0),
-                        );
-                        match self.icons.get(segment.key.as_ref()) {
-                            Some(AppIcon::Png(handle)) => frame.draw_image(
-                                bounds,
-                                iced::advanced::image::Image::new(handle.clone()),
-                            ),
-                            Some(AppIcon::Svg(handle)) => frame
-                                .draw_svg(bounds, iced::advanced::svg::Svg::new(handle.clone())),
-                            None => {}
-                        }
+                    if *track == 1 && segment.key.as_ref() == "away" {
+                        hatched(frame, bounds, p);
+                    } else {
+                        frame.fill_rectangle(bounds.position(), bounds.size(), color);
                     }
-                    if width > 90.0 {
+                    // shortcut: stored ranges have no rule-origin field; add provenance before showing AUTO badges.
+                    if *track == 0 && width > 48.0 {
                         frame.fill_text(Text {
                             content: super::localization::segment_label(segment)
                                 .chars()
-                                .take(
-                                    ((width
-                                        - if should_draw_app_icon(*track, width) {
-                                            27.0
-                                        } else {
-                                            0.0
-                                        })
-                                        / 7.0) as usize
-                                        - 2,
-                                )
+                                .take((width / 7.0) as usize - 1)
                                 .collect(),
-                            position: Point::new(
-                                left + 6.0
-                                    + if should_draw_app_icon(*track, width) {
-                                        27.0
-                                    } else {
-                                        0.0
-                                    },
-                                top + 16.0,
-                            ),
-                            color: Color::WHITE,
+                            position: Point::new(left + 6.0, bar_top + 9.0),
+                            color: super::design::categorical_ink(Color::from_rgb(
+                                rgb[0], rgb[1], rgb[2],
+                            )),
+                            font: super::design::UI,
                             size: 11.0.into(),
                             ..Text::default()
                         });
@@ -405,6 +481,92 @@ impl canvas::Program<Message> for Timeline<'_> {
             }
         });
         let mut overlay = Frame::new(renderer, bounds.size());
+        if self.visible.contains(&0) {
+            let top = self.track_top(0)
+                + (super::design::track_height(0, 0) - super::design::bar_height(0)) / 2.0;
+            for range in &self.gaps {
+                let Some(range) = model::clip(*range, self.view) else {
+                    continue;
+                };
+                let left = x(range.start) as f32;
+                let width = (x(range.end) - x(range.start)) as f32;
+                if width < 4.0 {
+                    continue;
+                }
+                let path = Path::rectangle(
+                    Point::new(left, top),
+                    Size::new((width - 1.0).max(0.0), super::design::bar_height(0)),
+                );
+                overlay.stroke(
+                    &path,
+                    Stroke {
+                        line_dash: canvas::LineDash {
+                            segments: &[3.0, 3.0],
+                            offset: 0,
+                        },
+                        ..Stroke::default().with_color(p.text3)
+                    },
+                );
+                if width > 40.0 {
+                    overlay.fill_text(Text {
+                        content: super::tr("+ Tag"),
+                        position: Point::new(left + 6.0, top + 9.0),
+                        color: p.text2,
+                        font: super::design::UI,
+                        size: 11.0.into(),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+        if let Some(now) = self
+            .now
+            .filter(|now| *now >= self.view.start && *now < self.view.end)
+        {
+            let left = x(now) as f32;
+            overlay.fill_rectangle(
+                Point::new(left, RULER),
+                Size::new(1.0, (bounds.height - RULER).max(0.0)),
+                p.danger,
+            );
+            let badge = (left - 36.0).clamp(0.0, (bounds.width - 40.0).max(0.0));
+            overlay.fill_rectangle(Point::new(badge, 3.0), Size::new(40.0, 18.0), p.danger);
+            overlay.fill_text(Text {
+                content: model::time_label(now),
+                position: Point::new(badge + 3.0, 5.0),
+                font: super::design::MONO,
+                size: 11.0.into(),
+                color: p.accent_ink,
+                ..Default::default()
+            });
+        }
+        if let Some((track, index)) = _state.hover {
+            let segment = &self.tracks[track].segments[index];
+            if let Some(range) = model::clip(segment.range, self.view) {
+                let top = self.track_top(track);
+                let y = if self.lanes[track].is_empty() {
+                    top + super::design::bar_offset(track)
+                } else {
+                    top + super::design::TRACK_HEAD
+                        + self.lane_index(track, &segment.key).unwrap_or(0) as f32
+                            * super::design::LANE
+                };
+                overlay.stroke(
+                    &Path::rectangle(
+                        Point::new(x(range.start) as f32, y),
+                        Size::new(
+                            ((x(range.end) - x(range.start)) as f32 - 1.0).max(1.0),
+                            if self.lanes[track].is_empty() {
+                                super::design::bar_height(track)
+                            } else {
+                                super::design::LANE_BAR
+                            },
+                        ),
+                    ),
+                    Stroke::default().with_color(p.text),
+                );
+            }
+        }
         if let Some(range) = self
             .selection
             .and_then(|range| model::clip(range, self.view))
@@ -414,11 +576,14 @@ impl canvas::Program<Message> for Timeline<'_> {
             overlay.fill_rectangle(
                 Point::new(left, RULER),
                 Size::new(width, bounds.height - RULER),
-                Color::from_rgba(0.15, 0.56, 0.52, 0.18),
+                Color {
+                    a: 0.10,
+                    ..p.accent
+                },
             );
             // Filled borders keep every pixel inside tiny-skia's damage bounds.
             let height = (bounds.height - RULER).max(0.0);
-            let border = Color::from_rgb8(39, 143, 133);
+            let border = p.accent;
             let edge = width.min(1.0);
             let cap = height.min(1.0);
             for (position, size) in [
@@ -457,16 +622,95 @@ impl canvas::Program<Message> for Timeline<'_> {
     }
 }
 pub fn canvas<'a>(program: Timeline<'a>) -> Canvas<Timeline<'a>, Message> {
-    let height = RULER + program.visible.len() as f32 * ROW;
+    let height = RULER
+        + program
+            .visible
+            .iter()
+            .map(|&t| super::design::track_height(t, program.lanes[t].len()))
+            .sum::<f32>();
     Canvas::new(program)
         .width(iced::Length::Fill)
         .height(height)
+}
+
+pub fn hatched(frame: &mut Frame, bounds: Rectangle, p: super::design::Palette) {
+    if bounds.height <= 0.0 {
+        return;
+    }
+    frame.fill_rectangle(bounds.position(), bounds.size(), p.away_dim);
+    let mut offset = -bounds.height;
+    while offset < bounds.width {
+        let a = offset.max(0.0);
+        let b = (offset + bounds.height).min(bounds.width);
+        if b > a {
+            frame.stroke(
+                &Path::line(
+                    Point::new(bounds.x + a, bounds.y + bounds.height - (a - offset)),
+                    Point::new(bounds.x + b, bounds.y + bounds.height - (b - offset)),
+                ),
+                Stroke::default().with_color(p.away).with_width(2.0),
+            );
+        }
+        offset += 6.0;
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use iced::widget::canvas::Program;
+
+    #[test]
+    fn subpixel_events_in_different_lanes_are_not_dropped_together() {
+        use iced::advanced::{graphics::geometry::Renderer as _, renderer::Headless as _};
+        let mut tracks = model::empty_tracks();
+        let mut a = model::Segment::new(Range::new(0, 1), "a", "A");
+        a.color = [0.9, 0.2, 0.3];
+        let mut b = model::Segment::new(Range::new(1, 2), "b", "B");
+        b.color = [0.2, 0.8, 0.4];
+        tracks[2].segments = vec![a, b];
+        let lanes = std::array::from_fn(|t| {
+            if t == 2 {
+                model::summarize_iter(tracks[2].segments.iter(), Range::new(0, 1000))
+            } else {
+                Vec::new()
+            }
+        });
+        let filtered = vec![vec![], vec![], vec![0, 1], vec![]];
+        let program = Timeline {
+            tracks: &tracks,
+            filtered: &filtered,
+            visible: &[2],
+            view: Range::new(0, 1000),
+            selection: None,
+            highlight: None,
+            lanes,
+            gaps: vec![],
+            now: None,
+            grid_cache: &canvas::Cache::new(),
+            cache: &canvas::Cache::new(),
+            stats: &PaintStats::default(),
+        };
+        let mut renderer = Renderer::new(super::super::design::UI, 13.0.into());
+        for geometry in program.draw(
+            &Interaction::default(),
+            &renderer,
+            &Theme::Dark,
+            Rectangle::with_size(Size::new(100.0, 116.0)),
+            mouse::Cursor::Unavailable,
+        ) {
+            renderer.draw_geometry(geometry);
+        }
+        let pixels = renderer.screenshot(Size::new(100, 116), 1.0, Color::BLACK);
+        assert!(
+            pixels[(83 * 100) * 4] > 100,
+            "first application's subpixel bar must remain visible"
+        );
+        assert!(
+            pixels[(101 * 100) * 4 + 1] > 100,
+            "second application's subpixel bar must remain visible in its own lane"
+        );
+    }
 
     #[test]
     fn selection_pixels_stay_inside_renderer_damage_bounds() {
@@ -482,7 +726,9 @@ mod tests {
             grid_cache: &canvas::Cache::new(),
             cache: &canvas::Cache::new(),
             stats: &PaintStats::default(),
-            icons: &HashMap::new(),
+            lanes: std::array::from_fn(|_| Vec::new()),
+            gaps: Vec::new(),
+            now: None,
         };
         let mut renderer = Renderer::new(iced::Font::DEFAULT, 16.0.into());
         let overlay = program
@@ -530,13 +776,6 @@ mod tests {
     }
 
     #[test]
-    fn application_icons_only_appear_when_the_zoomed_block_can_fit_one() {
-        assert!(super::should_draw_app_icon(2, 28.0));
-        assert!(!super::should_draw_app_icon(2, 27.0));
-        assert!(!super::should_draw_app_icon(1, 100.0));
-    }
-
-    #[test]
     fn native_canvas_drag_and_shift_extension_publish_correct_selection() {
         let tracks = model::fixture(Range::new(0, 86_400_000));
         let cache = canvas::Cache::new();
@@ -555,7 +794,9 @@ mod tests {
             grid_cache: &canvas::Cache::new(),
             cache: &cache,
             stats: &stats,
-            icons: &HashMap::new(),
+            lanes: std::array::from_fn(|_| Vec::new()),
+            gaps: Vec::new(),
+            now: None,
         };
         let bounds = Rectangle::new(Point::ORIGIN, Size::new(240.0, 212.0));
         let mut state = Interaction::default();
@@ -565,22 +806,22 @@ mod tests {
                 keyboard::Modifiers::SHIFT,
             )),
             bounds,
-            mouse::Cursor::Available(Point::new(100.0, 140.0)),
+            mouse::Cursor::Available(Point::new(100.0, 200.0)),
         );
         program.update(
             &mut state,
             &Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)),
             bounds,
-            mouse::Cursor::Available(Point::new(100.0, 140.0)),
+            mouse::Cursor::Available(Point::new(100.0, 200.0)),
         );
         let action = program
             .update(
                 &mut state,
                 &Event::Mouse(mouse::Event::CursorMoved {
-                    position: Point::new(110.0, 140.0),
+                    position: Point::new(110.0, 200.0),
                 }),
                 bounds,
-                mouse::Cursor::Available(Point::new(110.0, 140.0)),
+                mouse::Cursor::Available(Point::new(110.0, 200.0)),
             )
             .unwrap();
         match action.into_inner().0 {

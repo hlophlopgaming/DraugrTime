@@ -1,0 +1,377 @@
+$ cargo fmt --check
+Exit code: 0
+
+$ cargo clippy --all-targets -- -D warnings
+    Checking draugr-time v1.1.1 (/home/userreallyfun/Документы/GitHub/DagdaTime/app)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.17s
+Exit code: 0
+
+$ cargo test
+   Compiling draugr-time v1.1.1 (/home/userreallyfun/Документы/GitHub/DagdaTime/app)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.07s
+     Running unittests src/main.rs (target/debug/deps/draugr_time-115ba83c79183123)
+
+running 148 tests
+test desktop::appearance::tests::portal_stream_reports_the_current_scheme_first ... ignored, requires a desktop session portal with an explicit color preference
+test desktop::appearance::tests::reads_system_theme_from_the_desktop_portal ... ignored, requires a desktop session portal with an explicit color preference
+test desktop::about_tests::open_command_passes_the_url_to_the_platform_launcher ... ok
+test desktop::appearance::tests::system_preference_follows_native_theme_with_light_fallback ... ok
+test desktop::appearance::tests::manual_light_and_dark_override_the_system_theme ... ok
+test desktop::appearance::tests::portal_color_scheme_maps_dark_and_light_preferences ... ok
+test desktop::appearance::tests::setting_changed_signal_maps_only_the_color_scheme ... ok
+test desktop::appearance::tests::theme_button_cycles_system_light_dark ... ok
+test desktop::day::tests::render_day_review_screenshots ... ignored, writes review screenshots; run explicitly with --test-threads=1
+test desktop::design::tests::day_track_geometry_keeps_bars_thin_and_lanes_separate ... ok
+test desktop::day::hourly_tests::hourly_bins_preserve_clipped_totals_on_short_and_long_days ... ok
+test desktop::design::tests::button_text_keeps_contrast_in_both_themes_and_hover_states ... ok
+test desktop::design::tests::narrow_layout_changes_at_the_spec_boundary ... ok
+test desktop::design::tests::custom_dark_and_mid_tone_tag_colors_keep_readable_labels ... ok
+test branding::tests::tray_preserves_glyph_alpha_and_state_colors ... ok
+test desktop::load_tests::current_load_updates_history_and_finishes_loading ... ok
+test desktop::design::tests::text_tokens_have_readable_contrast_on_surfaces ... ok
+test desktop::load_tests::normal_launch_starts_with_no_generated_activity ... ok
+test branding::tests::theme_logos_use_original_assets_with_identical_visible_shapes ... ok
+test desktop::load_tests::stale_load_cannot_replace_a_different_day_or_finish_its_load ... ok
+test desktop::localization_tests::catalogs_cover_all_keys_and_preserve_template_parameters ... ok
+test desktop::localization_tests::duration_units_handle_zero_one_many_and_hours_in_every_language ... ok
+test desktop::localization_tests::native_widgets_render_every_language_screen_and_dialog ... ignored, changes process language; run alone with --test-threads=1
+test desktop::localization_tests::preferences_persist_and_return_to_system ... ok
+test desktop::localization_tests::supported_locale_detection_overrides_and_fallback ... ok
+test desktop::management::tests::background_refresh_preserves_a_failed_history_confirmation ... ok
+test desktop::management::tests::closing_drops_management_caches_but_keeps_unsaved_rule_fields ... ok
+test desktop::management::tests::new_branch_editor_is_canonical_before_background_refresh ... ok
+test desktop::management::tests::render_management_review_screenshots ... ignored, writes Tags and Rules review screenshots; run explicitly with --test-threads=1
+test desktop::load_tests::incremental_snapshots_match_full_history_across_gaps_and_search_changes ... ok
+test desktop::management::tests::stale_load_cannot_restore_hidden_screen_and_export_preserves_fields ... ok
+test desktop::management::tests::rule_editor_round_trips_case_discards_drafts_and_reorders ... ok
+test desktop::management::tests::tag_delete_requires_confirmation_of_current_usage ... ok
+test desktop::management::tests::tree_search_restores_ancestors_and_ignores_collapse ... ok
+test desktop::memory_tests::raw_icons_preserve_format_and_skip_missing_images ... ok
+test desktop::memory_tests::replacing_tail_updates_search_results ... ok
+test desktop::components::tests::keyboard_buttons_activate_only_when_enabled_and_focused ... ok
+test desktop::model::computer_tests::computer_evidence_overrides_legacy_afk_and_keeps_diagnostics_separate ... ok
+test desktop::model::computer_tests::unexplained_gap_is_not_a_window_observation_failure ... ok
+test desktop::model::power_boundary_tests::sleep_across_utc_day_boundary_does_not_count_as_active_or_untagged_work ... ok
+test desktop::model::power_boundary_tests::verified_off_is_displayable_but_unknown_gap_is_not_relabelled_off ... ok
+test desktop::model::tests::application_documents_rank_clipped_merged_time_and_keep_apps_separate ... ok
+test desktop::model::tests::application_summary_separates_apps_sharing_a_launcher_process ... ok
+test desktop::model::tests::drag_and_zoom_are_clamped_and_reversible ... ok
+test desktop::design::tests::navigation_automatically_fits_every_translated_label_on_one_line ... ok
+test desktop::model::tests::fixture_preserves_supplied_process_paths_for_application_identity ... ok
+test desktop::model::tests::overlapping_intervals_and_selection_shares_are_exact ... ok
+test desktop::model::tests::process_identity_survives_restart_without_merging_other_executables ... ok
+test desktop::model::tests::zoom_keeps_the_anchor_at_the_same_screen_position ... ok
+test desktop::overview_icon_tests::overview_name_uses_the_icon_cached_under_process_and_name ... ok
+test desktop::reports::band_boundary_tests::minute_cells_keep_gaps_and_subminute_edges_on_dst_length_days ... ok
+test desktop::reports::memory_regression_tests::daily_totals_split_intervals_without_copying_history ... ok
+test desktop::load_tests::segment_strings_are_shared_between_application_and_document_tracks ... ok
+test desktop::load_tests::stale_live_load_cannot_replace_smoke_fixture ... ok
+test desktop::reports::memory_regression_tests::week_grid_uses_common_hours_hover_and_day_navigation ... ok
+test desktop::reports::regression_tests::export_replaces_existing_file_and_leaves_no_temporary_files ... ok
+test desktop::reports::regression_tests::local_hour_ticks_follow_real_clock_on_short_and_long_days ... ok
+test desktop::reports::regression_tests::week_legacy_afk_matches_loaded_day_after_computer_history_started ... ok
+test desktop::reports::tests::native_donut_pointer_selects_project_or_application_and_shows_cursor ... ok
+test desktop::reports::monthly_tests::month_report_equals_daily_timesheet_and_clips_month_boundary ... ok
+test desktop::reports::tests::week_and_report_totals_equal_day_tracks_and_share_core_rows ... ok
+test desktop::day::tests::gaps_ignore_the_synthetic_untagged_track_blocks ... ok
+test desktop::day::interaction_tests::panel_filter_and_expansion_do_not_change_timeline_or_highlight ... ok
+test desktop::day::interaction_tests::reviewing_gaps_advances_and_wraps_without_tagging_or_deleting ... ok
+test desktop::reports::week::tests::previous_period_uses_local_dates_across_month_and_year_boundaries ... ok
+test desktop::reports::week::tests::render_week_review_screenshots ... ignored, writes Week review screenshots; run explicitly with --test-threads=1
+test desktop::reports::week::tests::load_previous_week_keeps_only_totals_and_clips_its_boundaries ... ok
+test desktop::reports::week::tests::sessions_and_gaps_merge_adjacent_context_changes_but_keep_breaks ... ok
+test desktop::reports::week::tests::timesheet_exports_exact_hour_values_and_escapes_tag_names ... ok
+test desktop::day::whole_day_tests::whole_day_panel_keeps_daily_totals_when_a_tagging_range_is_selected ... ok
+test desktop::day::interaction_tests::default_active_hours_and_keyboard_block_details_preserve_manual_zoom ... ok
+test desktop::load_tests::clicking_an_application_expands_documents_and_clicking_again_collapses ... ok
+test desktop::reports_tests::month_preset_covers_short_long_leap_and_year_end_months ... ok
+test desktop::model::tests::fixture_contains_5000_windows_four_tracks_and_correct_totals ... ok
+test desktop::reports::memory_regression_tests::minute_bands_are_bounded_and_grid_cache_tracks_theme_size_and_highlight ... ok
+test desktop::memory_tests::search_cache_is_lazy_shared_and_discarded ... ok
+test desktop::reports_tests::tiny_slices_preserve_total_and_expand_with_exact_members ... ok
+test desktop::reports::week::tests::dense_subpixel_activity_survives_and_outside_hours_is_clipped ... ok
+test desktop::reports::week::tests::review_gap_opens_day_preserves_selection_and_releases_week ... ok
+test desktop::rules::tests::draft_validates_priority_tag_and_dates ... ok
+test desktop::rules::workflow_tests::editor_live_preview_confirm_apply_and_undo_match ... ok
+test desktop::runtime::contention_tests::sampler_obeys_paused_snapshot_even_when_status_has_an_error ... ok
+test desktop::runtime::contention_tests::status_does_not_wait_for_tracker_control ... ok
+test desktop::runtime::incremental_tests::incremental_load_replaces_tail_and_refreshes_tag_revision ... ok
+test desktop::reports::tests::overview_timeline_reuses_geometry_until_view_changes ... ok
+test desktop::runtime::memory_tests::worker_loads_only_day_ranges_and_recovers_after_invalid_request ... ok
+test desktop::settings_tests::day_overview_preserves_tag_precedence_after_history_deletion ... ok
+test desktop::settings_tests::onboarding_completes_only_after_the_last_step_and_persists ... ok
+test desktop::settings_tests::privacy_lists_trim_deduplicate_and_preserve_paths_with_commas ... ok
+test desktop::settings_tests::privacy_settings_save_masked_apps_next_to_exclusions ... ok
+test desktop::settings_tests::schedule_times_reject_invalid_values ... ok
+test desktop::setup::tests::bridges_install_bundled_assets_in_desktop_discovery_locations ... ok
+test desktop::setup::tests::desktop_entry_uses_an_absolute_escaped_executable_and_hicolor_icon ... ok
+test desktop::single_instance::tests::only_one_instance_can_hold_the_lock_until_it_exits ... ok
+test desktop::startup::tests::appimage_path_wins_over_the_temporary_mount ... ok
+test desktop::startup::tests::autostart_launches_hidden_and_starts_recording ... ok
+test desktop::startup::tests::failed_new_startup_registration_preserves_the_legacy_entry ... ok
+test desktop::startup::tests::login_setting_updates_and_reports_provider_state ... ok
+test desktop::startup::tests::rename_keeps_startup_disabled_when_it_was_disabled ... ok
+test desktop::startup::tests::rename_moves_enabled_startup_to_the_new_registration ... ok
+test desktop::tagging_tests::away_prompt_threshold_and_duplicate_suppression ... ok
+test desktop::tagging_tests::crossing_day_tag_keeps_original_bounds_and_dialog_checks_overlaps ... ok
+test desktop::reports_tests::overview_keyboard_highlights_without_opening_tag_dialog ... ok
+test desktop::reports_tests::overview_and_selection_equal_day_active_totals ... ok
+test desktop::tagging_tests::return_status_prompts_while_window_is_hidden_on_a_historical_day ... ok
+test desktop::tagging_tests::tag_drag_moves_or_resizes_without_changing_duration_or_inverting_edges ... ok
+test desktop::tagging_tests::tag_totals_clip_at_day_boundaries_and_union_overlaps ... ok
+test desktop::tagging_tests::scoped_metadata_preserves_global_delete_confirmation_and_outside_day_overlap ... ok
+test desktop::theme_render_tests::rail_keyboard_focus_moves_and_activates_without_changing_day_state ... ok
+test desktop::tagging_tests::mock_afk_return_prompt_creates_exact_tag_range_and_undo_removes_it ... ok
+test desktop::theme_render_tests::theme_switch_draws_a_damage_tracked_full_window_background ... ok
+test desktop::tick_tests::live_day_ticks_only_on_the_day_screen ... ok
+test desktop::tick_tests::loaded_past_day_and_closed_window_stop_ticking ... ok
+test desktop::tick_tests::open_window_ticks_until_the_shown_day_is_loaded ... ok
+test desktop::tick_tests::preview_without_runtime_does_not_tick ... ok
+test desktop::ticking::tests::day_screen_showing_a_recorded_day_keeps_ticking ... ok
+test desktop::ticking::tests::hidden_window_does_not_tick ... ok
+test desktop::ticking::tests::lifecycle_benchmark_and_macos_always_tick ... ok
+test desktop::ticking::tests::loaded_past_day_stops_ticking ... ok
+test desktop::ticking::tests::other_screens_do_not_reload_a_live_day ... ok
+test desktop::ticking::tests::preview_without_runtime_never_ticks_outside_diagnostics ... ok
+test desktop::ticking::tests::unloaded_day_ticks_until_its_first_load_on_any_screen ... ok
+test desktop::ticking::tests::window_diagnostics_tick_only_with_a_window ... ok
+test desktop::reports_tests::report_load_generations_drop_stale_results ... ok
+test desktop::timeline::tests::selection_pixels_stay_inside_renderer_damage_bounds ... ok
+test desktop::timeline::tests::subpixel_events_in_different_lanes_are_not_dropped_together ... ok
+test desktop::timeline::tests::wheel_zoom_scales_with_scroll_distance ... ok
+test desktop::tray::linux::tests::native_ksni_menu_dispatches_without_gui_ticks ... ignored, requires a private D-Bus session (dbus-run-session)
+test desktop::reports_tests::overview_other_expands_and_highlighting_retains_editing_state ... ok
+test desktop::tray::linux::tests::tray_services_native_events_without_gui_ticks ... ok
+test icons::desktop_tests::kde_application_icons_resolve_to_local_images ... ignored, requires installed KDE applications and icon themes
+test icons::pixel_tests::windows_icon_pixels_are_converted_to_rgba ... ok
+test icons::tests::desktop_icon_matches_exact_process_executable_not_labels ... ok
+test icons::tests::desktop_entries_resolve_executable_and_launcher_visibility_once ... ok
+test icons::tests::desktop_ids_and_steam_classes_have_names_and_icons_without_live_processes ... ok
+test icons::tests::preview_processes_resolve_to_application_icons ... ignored, requires installed Linux applications and icon themes
+test icons::tests::reported_linux_applications_have_launcher_names_and_icons ... ignored, requires the reported applications installed on Linux
+test icons::tests::launcher_icons_are_disambiguated_by_application_name ... ok
+test desktop::theme_render_tests::shell_keeps_the_rail_and_panel_at_their_spec_widths ... ok
+test desktop::theme_render_tests::day_range_controls_and_lane_expansion_preserve_selection ... ok
+test desktop::timeline::tests::native_canvas_drag_and_shift_extension_publish_correct_selection ... ok
+test desktop::memory_tests::closing_releases_day_and_invalidates_pending_load_without_losing_edits ... ok
+test desktop::runtime::tests::recording_continues_without_gui_pulses ... ok
+test desktop::reports_tests::clicking_week_day_releases_report_data ... ok
+test desktop::reports::week::tests::full_report_opens_the_week_being_reviewed ... ok
+test desktop::reports_tests::tray_and_away_navigation_release_reports ... ok
+test desktop::reports_tests::week_refresh_preserves_custom_report_dates ... ok
+test desktop::reports_tests::leaving_report_screens_releases_data_and_rejects_late_loads ... ok
+
+test result: ok. 138 passed; 0 failed; 10 ignored; 0 measured; 0 filtered out; finished in 30.53s
+
+     Running unittests src/bin/draugr-time-cli.rs (target/debug/deps/draugr_time_cli-afeb535e94d5b4aa)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/cli.rs (target/debug/deps/cli-5bbd7304ad323a1a)
+
+running 2 tests
+test local_date_reports_honor_short_and_long_dst_days ... ok
+test cli_headless_help_report_export_import_and_errors ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running unittests src/lib.rs (target/debug/deps/draugr_time_core-fb919657642c7d58)
+
+running 69 tests
+test catalog_tests::catalog_unions_subtrees_splits_day_edges_and_tracks_last_use ... ok
+test crud_tests::invalid_ranges_and_tag_cycles_are_rejected ... ok
+test crud_tests::crud_round_trip_and_foreign_keys ... ok
+test catalog_tests::tag_creation_and_reparent_are_atomic_undoable_and_reject_cycles ... ok
+test crud_tests::file_database_uses_write_ahead_log ... ok
+test crud_tests::event_query_uses_half_open_ranges_and_optional_bucket ... ok
+test crud_tests::typed_tag_queries_keep_boundaries_recent_history_and_delete_totals ... ok
+test report_tests::clipped_days_and_selection_totals_are_additive ... ok
+test crud_tests::batch_commits_all_writes_or_none ... ok
+test catalog_tests::rule_order_is_atomic_and_coverage_distinguishes_existing_tags ... ok
+test catalog_tests::coverage_keeps_actual_executable_boundaries_when_report_labels_merge ... ok
+test catalog_tests::selected_rule_application_preserves_other_rules_and_rejects_stale_preview ... ok
+test crud_tests::event_query_includes_spanning_events_and_merges_buckets_in_time_order ... ok
+test report_tests::legacy_afk_stops_at_first_computer_evidence ... ok
+test report_tests::inactive_states_gaps_and_diagnostics_do_not_invent_work ... ok
+test report_tests::overview_partitions_hierarchy_overlaps_unknown_and_untagged ... ok
+test privacy_tests::deletion_splits_intervals_flushes_tails_and_preserves_outside_history ... ok
+test report_tests::report_context_fallbacks_and_web_precedence_remain_exact ... ok
+test report_tests::report_interns_repeated_labels_and_preserves_json_strings ... ok
+test report_tests::empty_report_handles_large_timestamp_ranges_without_daily_iteration ... ok
+test privacy_tests::deleting_a_range_handles_all_overlap_shapes_tags_and_live_tails ... ok
+test rules_tests::enabled_migration_preserves_old_rules ... ok
+test report_tests::activitywatch_import_is_atomic_validated_and_preserves_nonoverlap ... ok
+test report_tests::archive_roundtrip_preserves_overlap_precedence_and_boundary_markers ... ok
+test report_tests::five_thousand_events_keep_exact_totals ... ok
+test rules_tests::disabled_archived_ties_and_invalid_regex ... ok
+test rules_tests::history_undo_preserves_new_tracking_and_refuses_changed_applied_ranges ... ok
+test report_tests::archive_validation_and_mid_import_conflicts_leave_no_partial_records ... ok
+test privacy_tests::deleting_history_preserves_overlapping_tag_assignment_outside_the_range ... ok
+test report_tests::export_preserves_legacy_cutoff_even_when_computer_evidence_precedes_range ... ok
+test rules_tests::stale_confirmation_fails_without_partial_writes ... ok
+test rules_tests::rule_draft_preview_does_not_write_and_unknown_states_do_not_invent_work ... ok
+test rules_tests::matching_priorities_clipping_manual_tags_preview_apply_and_undo ... ok
+test tagging_tests::completed_afk_keeps_full_interval_across_midnight_and_health_changes ... ok
+test report_tests::local_archive_roundtrip_remaps_tags_and_keeps_reports ... ok
+test tagging_tests::edit_move_resize_delete_and_failed_merge_are_reversible ... ok
+test tagging_tests::hierarchy_split_replace_and_undo_are_atomic ... ok
+test tagging_tests::split_undo_handles_gaps_in_range_ids ... ok
+test tagging_tests::migration_from_v1_preserves_tag_history ... ok
+test tagging_tests::invalid_hierarchy_rolls_back_and_undo_preserves_unrelated_edits ... ok
+test tagging_tests::manager_merge_archive_delete_and_undo_preserve_history ... ok
+test tagging_tests::undo_conflict_is_atomic_and_preserves_new_dependents ... ok
+test tagging_tests::subtree_deletion_and_merge_include_rules_and_children_and_undo_restores_ids ... ok
+test tests::buffered_transition_flushes_all_buckets_and_drop_rolls_back ... ok
+test tests::duplicate_timestamp_does_not_extend_or_shrink_event ... ok
+test tests::buffered_overlay_crosses_query_boundary_and_flush_survives_reopen ... ok
+test tests::failed_migration_rolls_back_schema_and_version ... ok
+test tests::evidence_intervals_reject_overlap_and_keep_zero_length_markers ... ok
+test tests::failed_buffered_flush_keeps_the_previous_overlay_for_retry ... ok
+test tests::gap_equal_to_pulsetime_splits ... ok
+test tests::concurrent_writers_merge_into_one_event ... ok
+test tests::gap_greater_than_pulsetime_splits ... ok
+test tests::identical_heartbeats_merge ... ok
+test tests::newer_schema_is_rejected_without_downgrading ... ok
+test tests::json_object_key_order_does_not_split_events ... ok
+test tests::invalid_and_out_of_order_heartbeats_leave_database_unchanged ... ok
+test tagging_tests::computer_states_and_recording_gaps_never_become_away_prompts ... ok
+test tests::merging_uses_last_end_and_keeps_buckets_independent ... ok
+test tests::reopening_applies_migrations_once_and_preserves_events ... ok
+test tests::returning_to_previous_data_creates_new_event ... ok
+test tests::window_change_splits_events ... ok
+test tests::v2_migration_preserves_tag_history_and_adds_range_index ... ok
+test tests::buffered_ticks_are_visible_without_database_writes ... ok
+test tagging_tests::undo_retains_only_changed_rows_in_large_history ... ok
+test reports::reference::optimized_sweep_matches_original_on_diverse_histories ... ok
+test tests::buffered_wal_is_at_least_twenty_times_smaller_for_stable_tracking ... ok
+test report_tests::report_batch_boundaries_match_whole_calculation_with_overlap_and_legacy_cutoff ... ok
+test rules_tests::invalid_draft_and_empty_or_large_history_are_safe ... ok
+test report_tests::dense_report_exceeds_api_event_limit_without_losing_live_tails ... ok
+
+test result: ok. 69 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.43s
+
+     Running unittests src/lib.rs (target/debug/deps/draugr_time_daemon-f68872cf06a236b1)
+
+running 6 tests
+test paths::tests::directory_choice_persists_without_moving_history ... ok
+test paths::tests::renamed_app_keeps_legacy_history_and_uses_new_directory_for_new_installs ... ok
+test preferences::tests::privacy_filters_and_preferences_survive_restart ... ok
+test history::tests::aggregation_runs_without_storage_or_control_locked ... ok
+test history::tests::concurrent_history_edit_rejects_mixed_export ... ok
+test history_tests::cooperative_history_matches_storage_across_chunks_and_spanning_events ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.14s
+
+     Running unittests src/main.rs (target/debug/deps/tracker-638d7c3b8a8b7ace)
+
+running 4 tests
+test tests::output_failure_is_returned ... ok
+test tests::no_active_window_is_distinct_from_idle_failure ... ok
+test tests::debug_output_contains_window_and_idle_in_one_json_line ... ok
+test tests::window_error_still_reports_idle_and_next_tick_recovers ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/api.rs (target/debug/deps/api-0624b0c6d8c0758e)
+
+running 2 tests
+test computer_state_and_diagnostic_evidence_are_available_via_local_api ... ok
+test authentication_crud_and_pause_status ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/computer.rs (target/debug/deps/computer-8de5be54d525c50c)
+
+running 8 tests
+test known_lock_does_not_query_window_titles_or_idle ... ok
+test shutdown_request_does_not_claim_power_off_and_cancellation_resumes ... ok
+test focus_failure_preserves_valid_activity_and_diagnostic_reason ... ok
+test failed_sleep_marker_keeps_os_state_in_memory_and_never_extends_active_time ... ok
+test pause_and_lifecycle_are_independent_dimensions ... ok
+test sleep_wake_and_lock_do_not_extend_work_across_os_intervals ... ok
+test missed_notifications_and_crashes_during_sleep_stay_unknown ... ok
+test restart_distinguishes_orderly_stop_from_unexplained_gap ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/debug_cli.rs (target/debug/deps/debug_cli-248e04d7eb995df9)
+
+running 4 tests
+test debug_cli_emits_one_sample_per_second ... ignored, requires a dedicated X11 display (CI uses Xvfb)
+test unknown_command_exits_with_usage ... ok
+test wayland_debug_exits_with_explicit_error ... ok
+test help_does_not_require_a_desktop ... ok
+
+test result: ok. 3 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/privacy.rs (target/debug/deps/privacy-3597588de3aa45e7)
+
+running 8 tests
+test schedule_has_weekday_and_half_open_time_boundaries ... ok
+test invalid_schedule_settings_do_not_replace_saved_preferences ... ok
+test masked_apps_persist_and_older_settings_files_still_load ... ok
+test exclusion_wins_over_masking ... ok
+test masked_apps_keep_time_but_never_store_the_real_title ... ok
+test unmasked_apps_keep_their_titles ... ok
+test excluded_apps_never_reach_storage_or_current_activity ... ok
+test scheduled_pause_does_not_record_or_bridge_application_time ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/tracking.rs (target/debug/deps/tracking-7e76b1bf40bf9d44)
+
+running 8 tests
+test shutdown_notification_handles_a_signal_before_the_waiter_starts ... ok
+test missing_backend_is_visible_and_does_not_record_false_activity ... ok
+test pause_gap_is_not_recorded_and_resume_starts_a_new_interval ... ok
+test pause_and_resume_between_ticks_still_breaks_the_interval ... ok
+test sleep_gap_is_not_counted_as_work_and_timed_pause_expires ... ok
+test pause_and_shutdown_persist_the_overlay_and_stop_further_sampling ... ok
+test rules_tag_observed_active_time_but_never_away_pause_or_gaps ... ok
+test ten_minute_scenario_records_changes_away_and_return ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running unittests src/lib.rs (target/debug/deps/draugr_time_watchers-e6e373bed4f98ab5)
+
+running 9 tests
+test tests::x11_fixture_reads_window_title_pid_and_idle ... ignored, requires a dedicated X11 display (CI uses Xvfb)
+test tests::mock_can_simulate_permission_errors ... ok
+test tests::mock_implements_both_traits_without_native_apis ... ok
+test tests::process_identity_comes_from_pid_not_window_class ... ok
+test tests::wayland_session_is_explicitly_unsupported_in_m2 ... ok
+test wayland_tests::bridge_heartbeat_keeps_window_and_updates_only_idle ... ok
+test wayland_tests::bridge_requires_fresh_samples_and_preserves_null_window ... ok
+test wayland_tests::hyprland_empty_window_and_unicode_are_handled ... ok
+test wayland_tests::sway_tree_finds_focused_native_and_xwayland_windows ... ok
+
+test result: ok. 8 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests draugr_time_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests draugr_time_daemon
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests draugr_time_watchers
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+Exit code: 0
+
+$ cargo build --release --workspace
+   Compiling draugr-time v1.1.1 (/home/userreallyfun/Документы/GitHub/DagdaTime/app)
+    Finished `release` profile [optimized] target(s) in 2m 10s
+Exit code: 0
+
+draugr-time SHA256: 93014278d152fc3452ccd512bf9460df5565a1692c7cce937b1d166e91b62a7d

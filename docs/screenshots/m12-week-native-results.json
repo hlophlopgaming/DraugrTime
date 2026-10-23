@@ -1,0 +1,40 @@
+[
+  {
+    "name": "m12-week-native-dark-1280",
+    "attempts": [
+      {
+        "exit_code": 0,
+        "output": "Iced benchmark: canvas build max 1.97 ms\n"
+      }
+    ]
+  },
+  {
+    "name": "m12-week-native-light-1280",
+    "attempts": [
+      {
+        "exit_code": 0,
+        "output": "Iced benchmark: canvas build max 2.23 ms\n"
+      }
+    ]
+  },
+  {
+    "name": "m12-week-native-dark-640",
+    "attempts": [
+      {
+        "exit_code": 0,
+        "output": "Iced benchmark: canvas build max 1.78 ms\n"
+      }
+    ]
+  },
+  {
+    "name": "m12-week-native-light-640",
+    "attempts": [
+      {
+        "error": "Timed out after 30 seconds; process killed and waited"
+      },
+      {
+        "error": "Timed out after 30 seconds; process killed and waited"
+      }
+    ]
+  }
+]

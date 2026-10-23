@@ -185,3 +185,41 @@ colors, CSV/JSON export, theme changes and close/reopen with undo preserved.
 On real 1440p/4K displays, measure smaps_rollup before/after maximize, restore
 and close; compare font mappings after Cyrillic/CJK/emoji titles. Subminute
 Week bins are intentionally approximate; use Day for exact selection/editing.
+
+## M12 slice 3 — Week and adaptive navigation (2026-10-23)
+
+Week now paints tags and application context in two lanes, with pixel aggregation
+and cached geometry. Previous-week report intervals are discarded after deriving
+tag totals. Navigation measurements are cached by language/font version. No new
+subscription or idle timer was introduced.
+
+The final release diagnostic (1280×820, isolated fixture, PNG capture enabled)
+measured PSS 45.60 MiB at 4s, 49.61 MiB at 6s and 20.40 MiB at both 9s/11s after
+closing. Closed-window CPU ticks did not increase between the latter samples.
+Canvas build maximum was 2.75 ms. An earlier pre-Week run measured 44.86 MiB open
+and 19.78 MiB closed; the final observation is higher. These short diagnostics
+include capture/PNG work and benchmark ticking, and the old fixture retained
+future events that the new fixture clips. They cannot establish unchanged idle
+CPU/memory; a controlled longer comparison on real history remains unverified.
+
+Final native dark/light desktop and dark narrow diagnostics completed. Light
+narrow wrote its PNG but timed out before finishing automatic teardown on both
+attempts. Two earlier diagnostic runs also timed out. The cause is unestablished;
+do not count these as passing lifecycle checks. See the [slice report](m12-slice-3.md)
+and [raw measurements](screenshots/m12-week-measurements.json).
+
+## M12 slice 4 — Tags and Rules (2026-10-23)
+
+No new timer was added. Management metadata and tag statistics load on a worker;
+view() does no SQL. Subtree statistics stream historical ranges and retain only totals.
+The tag chart caches geometry. Data, chart and ordinary rule-preview caches are dropped
+on close or leaving management screens; unsaved fields remain, and a pending checked
+history confirmation retains its snapshot. The drag release subscription exists only
+while a rule is being dragged. Tests cover cache release and stale response rejection.
+
+Final widget screenshots use an isolated in-memory DB. Native CPU/PSS were not measured
+again in this slice; neither
+zero regression nor successful native teardown is claimed. The previous Wayland timeouts
+remain unresolved. Live editor previews retain the pre-existing 100,000-event cap and
+synchronous recalculation. Full metadata refresh scans tag history and computes coverage
+per enabled rule, so very large histories need separate responsiveness measurements.
