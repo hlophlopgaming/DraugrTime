@@ -170,6 +170,15 @@ impl Ui {
         };
         Ok(preferences)
     }
+    pub fn diagnostic_action(&self, elapsed: Duration) -> Option<Edit> {
+        if !self.preferences.onboarded && elapsed > Duration::from_secs((self.step + 1) as u64) {
+            Some(Edit::Next)
+        } else if self.preferences.onboarded && self.preferences.autostart_prompt_pending {
+            Some(Edit::AutostartAnswer(false))
+        } else {
+            None
+        }
+    }
     pub fn answer_autostart(&mut self, path: &Path) -> Result<(), String> {
         let mut preferences = self.preferences.clone();
         preferences.autostart_prompt_pending = false;

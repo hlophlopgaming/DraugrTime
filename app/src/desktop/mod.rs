@@ -879,12 +879,10 @@ impl State {
             }
             Message::Settings(edit) => return self.edit_settings(edit),
             Message::Tick => {
-                if self.onboarding_test
-                    && !self.settings_ui.preferences.onboarded
-                    && self.clock.elapsed()
-                        > Duration::from_secs((self.settings_ui.step + 1) as u64)
-                {
-                    return self.edit_settings(settings::Edit::Next);
+                if self.onboarding_test {
+                    if let Some(edit) = self.settings_ui.diagnostic_action(self.clock.elapsed()) {
+                        return self.edit_settings(edit);
+                    }
                 }
 
                 if self.last_sample.elapsed() >= Duration::from_secs(1) {

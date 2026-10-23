@@ -302,3 +302,27 @@ fn tray_extensions_and_resume_use_the_same_pause_as_the_window() {
     assert!(state.status.paused_until.is_none());
     assert_ne!(state.status.state, "paused");
 }
+
+#[test]
+fn onboarding_diagnostic_answers_the_new_prompt_before_waiting_for_day() {
+    let folder = tempfile::tempdir().unwrap();
+    let path = folder.path().join("settings.json");
+    let mut ui = settings::Ui::default();
+    assert!(ui.diagnostic_action(Duration::ZERO).is_none());
+    assert!(matches!(
+        ui.diagnostic_action(Duration::from_secs(2)),
+        Some(settings::Edit::Next)
+    ));
+    ui.advance(&path).unwrap();
+    assert!(matches!(
+        ui.diagnostic_action(Duration::from_secs(3)),
+        Some(settings::Edit::Next)
+    ));
+    ui.advance(&path).unwrap();
+    assert!(matches!(
+        ui.diagnostic_action(Duration::from_secs(4)),
+        Some(settings::Edit::AutostartAnswer(false))
+    ));
+    ui.answer_autostart(&path).unwrap();
+    assert!(ui.diagnostic_action(Duration::from_secs(5)).is_none());
+}

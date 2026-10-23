@@ -3,6 +3,8 @@ import os
 from pathlib import Path
 import plistlib
 import struct
+import re
+import tomllib
 import tempfile
 import unittest
 
@@ -35,6 +37,11 @@ class DistributionTests(unittest.TestCase):
             self.assertEqual(info['CFBundleShortVersionString'], '1.0.0')
             self.assertEqual((contents / 'MacOS' / info['CFBundleExecutable']).read_bytes(), source.read_bytes())
             self.assertTrue((contents / 'Resources' / info['CFBundleIconFile']).is_file())
+
+    def test_windows_installer_version_matches_workspace(self):
+        version = tomllib.loads((ROOT / 'Cargo.toml').read_text())['workspace']['package']['version']
+        script = (ROOT / 'packaging/windows/installer.iss').read_text()
+        self.assertEqual(re.search(r'#define MyAppVersion "([^"]+)"', script).group(1), version)
 
     def test_windows_installer_ships_cli_and_adds_it_to_user_path(self):
         script = (ROOT / 'packaging/windows/installer.iss').read_text()
