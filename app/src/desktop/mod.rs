@@ -1014,7 +1014,7 @@ impl State {
                     && !self.loading
                     && stale
                     && self.window.is_some()
-                    && self.motion_visible
+                    && (self.motion_visible || self.runtime_test || self.lifecycle)
                 {
                     self.finish_motion();
                     if let Some(runtime) = self.runtime.as_ref() {
@@ -2722,6 +2722,22 @@ mod tick_tests {
         let task = state.update(Message::Tick);
         assert!(task.units() > 0);
         assert!(state.loading);
+    }
+
+    #[test]
+    fn headless_diagnostics_load_history_without_window_focus() {
+        for lifecycle in [false, true] {
+            let mut state = recording_state();
+            let _ = state.update(Message::MotionUnfocused);
+            state.runtime_test = !lifecycle;
+            state.lifecycle = lifecycle;
+            let task = state.update(Message::Tick);
+            assert!(
+                task.units() > 0,
+                "headless diagnostics need their initial history load"
+            );
+            assert!(state.loading);
+        }
     }
 
     #[test]

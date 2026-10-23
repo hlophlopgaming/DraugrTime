@@ -233,6 +233,8 @@ sampling timer. Focus re-enables loading without waiting for the previous refres
 interval. Existing history stays available; one in-flight load may still complete.
 Visible unfocused windows use the same policy because Wayland does not provide a
 portable minimized-state query through Iced.
+Explicit runtime/lifecycle diagnostics retain history loading without focus for
+Xvfb CI, which has no window manager. A separate regression test covers this path.
 
 Regression command:
 `cargo test -p draugr-time unfocused_window_stops_history_loads_and_resumes_on_focus`.

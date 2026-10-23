@@ -1075,3 +1075,6 @@ preserving the incremental cursor, editing state and undo. One already-running
 load may complete after focus loss. Background recording and tray updates remain
 independent; macOS retains its main-thread sampling timer, but cannot dispatch
 history loads while unfocused. No polling timer or platform dependency is added.
+Explicit runtime/lifecycle diagnostics may load without focus: Xvfb CI has no
+window manager to focus their windows, and these modes must verify recording
+and close/reopen independently of desktop focus.
