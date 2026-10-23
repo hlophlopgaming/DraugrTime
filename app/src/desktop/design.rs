@@ -2,6 +2,9 @@ use iced::{Color, Font};
 
 pub const UI: Font = Font::with_name("Inter Tight");
 pub const MONO: Font = Font::with_name("JetBrains Mono");
+pub const SEGMENT_RADIUS: f32 = 7.0;
+pub const MOTION_OFFSET: f32 = 4.0;
+pub const TOOLTIP_RISE: f32 = 2.0;
 pub const RAIL: f32 = 72.0;
 pub const RAIL_ITEM: f32 = 56.0;
 pub const RAIL_INSET: u16 = 8;
@@ -255,7 +258,7 @@ pub fn segment(
                 p.text3
             };
         }
-        style.border.radius = 7.0.into();
+        style.border.radius = SEGMENT_RADIUS.into();
         style
     }
 }
@@ -476,6 +479,17 @@ pub const MANAGER_TABLE_PADDING: u16 = 12;
 
 pub const FIELD_VERTICAL: u16 = 9;
 pub const FIELD_HORIZONTAL: u16 = 10;
+
+pub const SETTINGS_DIALOG_WIDTH: f32 = 520.0;
+pub fn chip(
+    theme: &iced::Theme,
+    status: iced::widget::button::Status,
+) -> iced::widget::button::Style {
+    let mut style = secondary(theme, status);
+    style.border.radius = 0.0.into();
+    style
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

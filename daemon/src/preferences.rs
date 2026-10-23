@@ -10,6 +10,8 @@ pub const MASKED_TITLE: &str = "[masked]";
 #[serde(default, deny_unknown_fields)]
 pub struct Preferences {
     pub onboarded: bool,
+    /// Armed only by completing new-user onboarding; old settings never prompt.
+    pub autostart_prompt_pending: bool,
     pub excluded_apps: Vec<String>,
     /// Applications whose time is recorded but whose window titles are
     /// replaced with [`MASKED_TITLE`] before storage. Matched like

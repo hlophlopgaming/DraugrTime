@@ -24,6 +24,7 @@ pub const RULER: f32 = 32.0;
 #[derive(Default)]
 pub struct PaintStats {
     pub frames: AtomicUsize,
+    pub base_builds: AtomicUsize,
     pub max_build_us: AtomicU64,
 }
 #[derive(Default)]
@@ -48,6 +49,11 @@ pub struct Timeline<'a> {
     pub view: Range,
     pub selection: Option<Range>,
     pub highlight: Option<&'a str>,
+    pub highlight_from: &'a [(Option<String>, f32)],
+    pub highlight_progress: f32,
+    pub heights: [f32; 4],
+    pub track_progress: [f32; 4],
+    pub tag_growth: Option<(Range, f32)>,
     pub grid_cache: &'a canvas::Cache,
     pub cache: &'a canvas::Cache,
     pub stats: &'a PaintStats,
@@ -62,7 +68,7 @@ impl Timeline<'_> {
                 .visible
                 .iter()
                 .take_while(|&&t| t != track)
-                .map(|&t| super::design::track_height(t, self.lanes[t].len()))
+                .map(|&t| self.heights[t])
                 .sum::<f32>()
     }
     fn lane_index(&self, track: usize, key: &str) -> Option<usize> {
@@ -75,14 +81,27 @@ impl Timeline<'_> {
                     .position(|r| r.key.as_ref() == "__other")
             })
     }
+    fn block_layout(&self, track: usize, key: &str) -> Option<(f32, f32)> {
+        let top = self.track_top(track);
+        let collapsed_y = super::design::bar_offset(track);
+        let collapsed_h = super::design::bar_height(track);
+        if self.lanes[track].is_empty() {
+            return Some((top + collapsed_y, collapsed_h));
+        }
+        let lane = self.lane_index(track, key)?;
+        let p = self.track_progress[track];
+        let y = top + super::design::TRACK_HEAD + lane as f32 * super::design::LANE
+            - super::design::MOTION_OFFSET * (1.0 - p);
+        Some((
+            y,
+            super::design::LANE_BAR.min((top + self.heights[track] - y).max(0.0)),
+        ))
+    }
     fn lane_hit(&self, track: usize, key: &str, y: f32) -> bool {
         self.lanes[track].is_empty()
-            || self.lane_index(track, key).is_some_and(|lane| {
-                let top = self.track_top(track)
-                    + super::design::TRACK_HEAD
-                    + lane as f32 * super::design::LANE;
-                (top..top + super::design::LANE).contains(&y)
-            })
+            || self
+                .block_layout(track, key)
+                .is_some_and(|(top, height)| y >= top && y <= top + height)
     }
 
     fn hit(&self, point: Point, width: f32) -> Option<(usize, usize)> {
@@ -91,8 +110,7 @@ impl Timeline<'_> {
         }
         let track = self.visible.iter().copied().find(|&track| {
             let top = self.track_top(track);
-            point.y >= top
-                && point.y < top + super::design::track_height(track, self.lanes[track].len())
+            point.y >= top && point.y < top + self.heights[track]
         })?;
         let ts = model::pixel_range(self.view, width, point.x, point.x).start;
         self.filtered[track]
@@ -211,7 +229,7 @@ impl canvas::Program<Message> for Timeline<'_> {
                             model::pixel_range(self.view, bounds.width, drag.x, point.x)
                         };
                         return Some(
-                            canvas::Action::publish(Message::Select(Some(Self::extended(
+                            canvas::Action::publish(Message::SelectDragging(Some(Self::extended(
                                 range,
                                 if drag.shift { drag.old } else { None },
                             ))))
@@ -247,7 +265,7 @@ impl canvas::Program<Message> for Timeline<'_> {
                 }
                 state.tag_drag = None;
                 if state.double || drag.moved {
-                    return Some(canvas::Action::capture());
+                    return Some(canvas::Action::publish(Message::SelectionReleased).and_capture());
                 }
                 if let Some(point) = point {
                     if self.visible.contains(&0)
@@ -365,7 +383,7 @@ impl canvas::Program<Message> for Timeline<'_> {
             }
             for &track in self.visible {
                 let top = self.track_top(track);
-                let height = super::design::track_height(track, self.lanes[track].len());
+                let height = self.heights[track];
                 frame.stroke(
                     &Path::line(
                         Point::new(0.0, top + height),
@@ -376,111 +394,196 @@ impl canvas::Program<Message> for Timeline<'_> {
             }
         });
         let base = self.cache.draw(renderer, bounds.size(), |frame| {
+            self.stats.base_builds.fetch_add(1, Ordering::Relaxed);
             for track in self.visible {
                 let top = self.track_top(*track);
-                for (lane, _) in self.lanes[*track].iter().enumerate() {
-                    let y =
-                        top + super::design::TRACK_HEAD + lane as f32 * super::design::LANE + 5.0;
-                    frame.stroke(
-                        &Path::line(Point::new(0.0, y), Point::new(bounds.width, y)),
-                        Stroke {
-                            line_dash: canvas::LineDash {
-                                segments: &[1.0, 3.0],
-                                offset: 0,
-                            },
-                            ..Stroke::default().with_color(p.line)
-                        },
-                    );
-                }
-                let mut previous = vec![-1; self.lanes[*track].len().max(1)];
-                for index in &self.filtered[*track] {
-                    let segment = &self.tracks[*track].segments[*index];
-                    if *track == 0 && segment.key.as_ref() == "untagged" {
+                frame.with_clip(
+                    Rectangle::new(
+                        Point::new(0.0, top),
+                        Size::new(bounds.width, self.heights[*track]),
+                    ),
+                    |frame| {
+                        for (lane, _) in self.lanes[*track].iter().enumerate() {
+                            let y = top
+                                + super::design::TRACK_HEAD
+                                + lane as f32 * super::design::LANE
+                                + 5.0;
+                            frame.stroke(
+                                &Path::line(Point::new(0.0, y), Point::new(bounds.width, y)),
+                                Stroke {
+                                    line_dash: canvas::LineDash {
+                                        segments: &[1.0, 3.0],
+                                        offset: 0,
+                                    },
+                                    ..Stroke::default()
+                                        .with_color(p.line.scale_alpha(self.track_progress[*track]))
+                                },
+                            );
+                        }
+                        let mut previous = vec![-1; self.lanes[*track].len().max(1)];
+                        let mut previous_collapsed = -1;
+                        for index in &self.filtered[*track] {
+                            let segment = &self.tracks[*track].segments[*index];
+                            if *track == 0 && segment.key.as_ref() == "untagged" {
+                                continue;
+                            }
+                            let Some(range) = model::clip(segment.range, self.view) else {
+                                continue;
+                            };
+                            let left = x(range.start) as f32;
+                            let width = (x(range.end) - x(range.start)) as f32;
+                            let lane = if self.lanes[*track].is_empty() {
+                                0
+                            } else {
+                                self.lane_index(*track, &segment.key).unwrap_or(0)
+                            };
+                            if width < 1.0 && left.floor() as i32 == previous[lane] {
+                                continue;
+                            }
+                            previous[lane] = left.floor() as i32;
+                            let rgb = if *track == 1 && segment.key.as_ref() == "active" {
+                                [p.accent.r, p.accent.g, p.accent.b]
+                            } else {
+                                segment.color
+                            };
+                            let color = Color {
+                                r: rgb[0],
+                                g: rgb[1],
+                                b: rgb[2],
+                                a: if self.lanes[*track].is_empty() {
+                                    1.0
+                                } else {
+                                    self.track_progress[*track]
+                                },
+                            };
+                            if !self.lanes[*track].is_empty()
+                                && self.track_progress[*track] < 1.0
+                                && (width >= 1.0 || left.floor() as i32 != previous_collapsed)
+                            {
+                                previous_collapsed = left.floor() as i32;
+                                frame.fill_rectangle(
+                                    Point::new(left, top + super::design::bar_offset(*track)),
+                                    Size::new(
+                                        (width - 1.0).max(1.0),
+                                        super::design::bar_height(*track),
+                                    ),
+                                    Color {
+                                        a: 1.0 - self.track_progress[*track],
+                                        ..color
+                                    },
+                                );
+                            }
+                            let Some((bar_top, bar_height)) =
+                                self.block_layout(*track, segment.key.as_ref())
+                            else {
+                                continue;
+                            };
+                            let bounds = Rectangle::new(
+                                Point::new(left, bar_top),
+                                Size::new((width - 1.0).max(1.0), bar_height),
+                            );
+                            if *track == 1 && segment.key.as_ref() == "away" {
+                                hatched(frame, bounds, p);
+                            } else {
+                                frame.fill_rectangle(bounds.position(), bounds.size(), color);
+                            }
+                            // shortcut: stored ranges have no rule-origin field; add provenance before showing AUTO badges.
+                            if *track == 0 && width > 48.0 {
+                                frame.fill_text(Text {
+                                    content: super::localization::segment_label(segment)
+                                        .chars()
+                                        .take((width / 7.0) as usize - 1)
+                                        .collect(),
+                                    position: Point::new(left + 6.0, bar_top + 9.0),
+                                    color: super::design::categorical_ink(Color::from_rgb(
+                                        rgb[0], rgb[1], rgb[2],
+                                    )),
+                                    font: super::design::UI,
+                                    size: 11.0.into(),
+                                    ..Text::default()
+                                });
+                            }
+                        }
+                    },
+                );
+            }
+        });
+        let mut overlay = Frame::new(renderer, bounds.size());
+        if self.highlight.is_some()
+            || (!self.highlight_from.is_empty() && self.highlight_progress < 1.0)
+            || self.tag_growth.is_some_and(|(_, p)| p < 1.0)
+        {
+            for &track in self.visible {
+                for &index in &self.filtered[track] {
+                    let segment = &self.tracks[track].segments[index];
+                    if track == 0 && segment.key.as_ref() == "untagged" {
                         continue;
                     }
                     let Some(range) = model::clip(segment.range, self.view) else {
                         continue;
                     };
-                    let left = x(range.start) as f32;
-                    let width = (x(range.end) - x(range.start)) as f32;
-                    let lane = if self.lanes[*track].is_empty() {
-                        0
-                    } else {
-                        self.lane_index(*track, &segment.key).unwrap_or(0)
-                    };
-                    if width < 1.0 && left.floor() as i32 == previous[lane] {
+                    let Some((top, height)) = self.block_layout(track, segment.key.as_ref()) else {
                         continue;
-                    }
-                    previous[lane] = left.floor() as i32;
-                    let rgb = if *track == 1 && segment.key.as_ref() == "active" {
-                        [p.accent.r, p.accent.g, p.accent.b]
-                    } else {
-                        segment.color
                     };
-                    let color = Color {
-                        r: rgb[0],
-                        g: rgb[1],
-                        b: rgb[2],
-                        a: if self.highlight.is_some_and(|key| {
+                    let alpha = |key: Option<&str>| {
+                        if key.is_some_and(|key| {
                             key != segment.key.as_ref()
-                                && !(*track == 3
+                                && !(track == 3
                                     && segment
                                         .key
                                         .strip_prefix(key)
                                         .is_some_and(|suffix| suffix.starts_with('\0')))
                         }) {
-                            if self.lanes[*track].is_empty() {
+                            if self.lanes[track].is_empty() {
                                 0.16
                             } else {
                                 0.30
                             }
                         } else {
                             1.0
-                        },
+                        }
                     };
-                    let (bar_top, bar_height) = if self.lanes[*track].is_empty() {
-                        (
-                            top + super::design::bar_offset(*track),
-                            super::design::bar_height(*track),
-                        )
-                    } else {
-                        let Some(lane) = self.lane_index(*track, segment.key.as_ref()) else {
-                            continue;
+                    let to = alpha(self.highlight);
+                    let from: f32 =
+                        if self.highlight_progress < 1.0 && !self.highlight_from.is_empty() {
+                            self.highlight_from
+                                .iter()
+                                .map(|(key, weight)| alpha(key.as_deref()) * weight)
+                                .sum()
+                        } else {
+                            to
                         };
-                        (
-                            top + super::design::TRACK_HEAD + lane as f32 * super::design::LANE,
-                            super::design::LANE_BAR,
-                        )
-                    };
-                    let bounds = Rectangle::new(
-                        Point::new(left, bar_top),
-                        Size::new((width - 1.0).max(1.0), bar_height),
-                    );
-                    if *track == 1 && segment.key.as_ref() == "away" {
-                        hatched(frame, bounds, p);
-                    } else {
-                        frame.fill_rectangle(bounds.position(), bounds.size(), color);
+                    let opacity = from + (to - from) * self.highlight_progress;
+                    let left = x(range.start) as f32;
+                    let width = ((x(range.end) - x(range.start)) as f32 - 1.0).max(1.0);
+                    if opacity < 1.0 {
+                        overlay.fill_rectangle(
+                            Point::new(left, top),
+                            Size::new(width, height),
+                            p.surf.scale_alpha(1.0 - opacity),
+                        );
                     }
-                    // shortcut: stored ranges have no rule-origin field; add provenance before showing AUTO badges.
-                    if *track == 0 && width > 48.0 {
-                        frame.fill_text(Text {
-                            content: super::localization::segment_label(segment)
-                                .chars()
-                                .take((width / 7.0) as usize - 1)
-                                .collect(),
-                            position: Point::new(left + 6.0, bar_top + 9.0),
-                            color: super::design::categorical_ink(Color::from_rgb(
-                                rgb[0], rgb[1], rgb[2],
-                            )),
-                            font: super::design::UI,
-                            size: 11.0.into(),
-                            ..Text::default()
-                        });
+                    if track == 0 {
+                        if let Some((growth, progress)) = self.tag_growth.filter(|(_, p)| *p < 1.0)
+                        {
+                            let end = growth.start
+                                + (growth.duration() as f64 * f64::from(progress)) as i64;
+                            let mask = Range::new(
+                                range.start.max(end).max(growth.start),
+                                range.end.min(growth.end),
+                            );
+                            if mask.start < mask.end {
+                                overlay.fill_rectangle(
+                                    Point::new(x(mask.start) as f32, top),
+                                    Size::new((x(mask.end) - x(mask.start)) as f32, height),
+                                    p.surf,
+                                );
+                            }
+                        }
                     }
                 }
             }
-        });
-        let mut overlay = Frame::new(renderer, bounds.size());
+        }
         if self.visible.contains(&0) {
             let top = self.track_top(0)
                 + (super::design::track_height(0, 0) - super::design::bar_height(0)) / 2.0;
@@ -626,7 +729,7 @@ pub fn canvas<'a>(program: Timeline<'a>) -> Canvas<Timeline<'a>, Message> {
         + program
             .visible
             .iter()
-            .map(|&t| super::design::track_height(t, program.lanes[t].len()))
+            .map(|&t| program.heights[t])
             .sum::<f32>();
     Canvas::new(program)
         .width(iced::Length::Fill)
@@ -684,6 +787,11 @@ mod tests {
             view: Range::new(0, 1000),
             selection: None,
             highlight: None,
+            highlight_from: &[],
+            highlight_progress: 1.0,
+            heights: super::super::design::TRACK_HEIGHTS,
+            track_progress: [1.0; 4],
+            tag_growth: None,
             lanes,
             gaps: vec![],
             now: None,
@@ -723,6 +831,11 @@ mod tests {
             view: Range::new(0, 240),
             selection: Some(Range::new(50, 100)),
             highlight: None,
+            highlight_from: &[],
+            highlight_progress: 1.0,
+            heights: super::super::design::TRACK_HEIGHTS,
+            track_progress: [1.0; 4],
+            tag_growth: None,
             grid_cache: &canvas::Cache::new(),
             cache: &canvas::Cache::new(),
             stats: &PaintStats::default(),
@@ -791,6 +904,11 @@ mod tests {
             view: Range::new(0, 86_400_000),
             selection: Some(Range::new(8 * 3_600_000, 9 * 3_600_000)),
             highlight: None,
+            highlight_from: &[],
+            highlight_progress: 1.0,
+            heights: super::super::design::TRACK_HEIGHTS,
+            track_progress: [1.0; 4],
+            tag_growth: None,
             grid_cache: &canvas::Cache::new(),
             cache: &cache,
             stats: &stats,
@@ -825,7 +943,7 @@ mod tests {
             )
             .unwrap();
         match action.into_inner().0 {
-            Some(Message::Select(Some(range))) => {
+            Some(Message::SelectDragging(Some(range))) => {
                 assert_eq!(range, Range::new(8 * 3_600_000, 11 * 3_600_000))
             }
             message => panic!("unexpected action {message:?}"),

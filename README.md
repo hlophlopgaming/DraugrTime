@@ -26,6 +26,8 @@ Draugr Time records your active application, window title and active/away time,
 then shows them on a daily timeline. It is a free, GPL-3.0 project inspired by
 ManicTime's workflow. Your history stays on your computer.
 
+**In active development.** The interface and features are still evolving.
+
 ## What works
 
 - Native **Iced** UI with light, dark and system themes.

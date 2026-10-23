@@ -26,7 +26,7 @@ impl State {
     }
     pub(super) fn day_lanes(&self) -> [Vec<Summary>; 4] {
         std::array::from_fn(|track| {
-            if !self.expanded_tracks[track] {
+            if !self.expanded_tracks[track] && !self.motion.active(motion::Key::Track(track)) {
                 return Vec::new();
             }
             let mut rows = model::summarize_iter(self.all[track].segments.iter(), self.day);
@@ -224,10 +224,25 @@ impl State {
                         (i != 2 || self.selection.is_some()).then_some(Message::DayRange(i)),
                     )
                     .height(design::SEGMENT_ITEM)
-                    .style(design::segment(self.range_mode == i)),
+                    .style(move |theme, status| {
+                        let mut style = design::segment(self.range_mode == i)(theme, status);
+                        if self.range_mode == i {
+                            style.background = None;
+                        }
+                        style
+                    }),
             );
         }
         let lanes = self.day_lanes();
+        let track_progress = std::array::from_fn(|track| {
+            self.motion.value(
+                motion::Key::Track(track),
+                f32::from(self.expanded_tracks[track]),
+            )
+        });
+        let heights = std::array::from_fn(|track| {
+            motion::track_height(track, lanes[track].len(), track_progress[track])
+        });
         let labels = self.visible.iter().fold(
             column![space::vertical().height(timeline::RULER)],
             |labels, &track| {
@@ -278,25 +293,13 @@ impl State {
                 } else {
                     tr(self.all[track].name)
                 };
-                let caption = column![
-                    text(if track >= 2 {
-                        format!(
-                            "{} {}",
-                            if self.expanded_tracks[track] {
-                                "⌄"
-                            } else {
-                                "›"
-                            },
-                            name
-                        )
-                    } else {
-                        name
-                    })
-                    .font(design::SEMIBOLD)
-                    .size(design::BODY),
-                    text(meta).size(design::LABEL).color(p.text3)
-                ]
-                .spacing(design::SMALL_GAP);
+                let mut title = row![].spacing(design::SMALL_GAP);
+                if track >= 2 {
+                    title = title.push(motion::chevron(track_progress[track], p.text2));
+                }
+                title = title.push(text(name).font(design::SEMIBOLD).size(design::BODY));
+                let caption = column![title, text(meta).size(design::LABEL).color(p.text3)]
+                    .spacing(design::SMALL_GAP);
                 let label: Element<'_, Message> = if track >= 2 {
                     button(caption)
                         .height(Length::Shrink)
@@ -309,10 +312,10 @@ impl State {
                 };
                 let mut body = column![label].spacing(design::SMALL_GAP);
                 if !lanes[track].is_empty() {
-                    body = body.push(space::vertical().height(design::SMALL_GAP));
+                    let mut lane_labels = column![].spacing(0);
                     for lane in &lanes[track] {
                         let color = Color::from_rgb(lane.color[0], lane.color[1], lane.color[2]);
-                        body = body.push(
+                        lane_labels = lane_labels.push(
                             row![
                                 container(space::horizontal())
                                     .width(design::LANE_DOT)
@@ -333,19 +336,30 @@ impl State {
                             .height(design::LANE),
                         );
                     }
+                    body = body.push(motion::effect(
+                        lane_labels,
+                        motion::Visual {
+                            opacity: track_progress[track],
+                            offset: -design::MOTION_OFFSET * (1.0 - track_progress[track]),
+                            ..Default::default()
+                        },
+                        p.surf,
+                    ));
                 }
-                labels.push(
+                labels.push(motion::effect(
                     container(body)
                         .padding(iced::Padding {
                             top: if lanes[track].is_empty() {
                                 design::TRACK_LABEL_TOP[track]
                             } else {
-                                0.0
+                                design::TRACK_LABEL_TOP[track] * (1.0 - track_progress[track])
                             },
                             ..iced::Padding::ZERO
                         })
-                        .height(design::track_height(track, lanes[track].len())),
-                )
+                        .height(heights[track]),
+                    motion::Visual::default(),
+                    p.surf,
+                ))
             },
         );
         let plot = timeline::canvas(timeline::Timeline {
@@ -355,6 +369,13 @@ impl State {
             view: self.view,
             selection: self.selection,
             highlight: self.highlight.as_deref(),
+            highlight_from: &self.highlight_from,
+            highlight_progress: self.motion.value(motion::Key::Highlight, 1.0),
+            heights,
+            track_progress,
+            tag_growth: self
+                .tag_toast
+                .map(|(range, _)| (range, self.motion.value(motion::Key::Tag, 1.0))),
             grid_cache: &self.grid_cache,
             cache: &self.cache,
             stats: &self.stats,
@@ -377,34 +398,44 @@ impl State {
             };
             tooltip(
                 plot,
-                container(
-                    column![
-                        text(localization::segment_label(s))
-                            .font(
-                                if s.label.as_ref() == draugr_time_daemon::preferences::MASKED_TITLE
-                                {
-                                    iced::Font {
-                                        style: iced::font::Style::Italic,
-                                        ..design::UI
+                motion::effect(
+                    container(
+                        column![
+                            text(localization::segment_label(s))
+                                .font(
+                                    if s.label.as_ref()
+                                        == draugr_time_daemon::preferences::MASKED_TITLE
+                                    {
+                                        iced::Font {
+                                            style: iced::font::Style::Italic,
+                                            ..design::UI
+                                        }
+                                    } else {
+                                        design::UI
                                     }
-                                } else {
-                                    design::UI
-                                }
-                            )
-                            .size(design::BODY),
-                        title,
-                        text(format!(
-                            "{}–{} · {}",
-                            model::time_label(s.range.start),
-                            model::time_label(s.range.end),
-                            model::duration(s.range.duration())
-                        ))
-                        .font(design::MONO)
-                        .size(design::LABEL)
-                    ]
-                    .spacing(design::SMALL_GAP),
-                )
-                .padding(design::RAIL_PADDING),
+                                )
+                                .size(design::BODY),
+                            title,
+                            text(format!(
+                                "{}–{} · {}",
+                                model::time_label(s.range.start),
+                                model::time_label(s.range.end),
+                                model::duration(s.range.duration())
+                            ))
+                            .font(design::MONO)
+                            .size(design::LABEL)
+                        ]
+                        .spacing(design::SMALL_GAP),
+                    )
+                    .padding(design::RAIL_PADDING),
+                    motion::Visual {
+                        opacity: self.motion.value(motion::Key::Tooltip, 1.0),
+                        offset: design::TOOLTIP_RISE
+                            * (1.0 - self.motion.value(motion::Key::Tooltip, 1.0)),
+                        ..Default::default()
+                    },
+                    p.raised,
+                ),
                 tooltip::Position::FollowCursor,
             )
             .delay(Duration::from_millis(design::TOOLTIP_DELAY))
@@ -434,9 +465,19 @@ impl State {
         }
         heading = heading.push(space::horizontal());
         heading = heading.push(
-            container(ranges)
-                .padding(design::SEGMENT_PADDING)
-                .style(design::segment_track),
+            container(motion::effect(
+                ranges,
+                motion::Visual {
+                    segment: (self.range_mode < 3).then_some(
+                        self.motion
+                            .value(motion::Key::Range, self.range_mode as f32),
+                    ),
+                    ..Default::default()
+                },
+                p.side,
+            ))
+            .padding(design::SEGMENT_PADDING)
+            .style(design::segment_track),
         );
         let heading: Element<'_, Message> = if narrow {
             heading.wrap().into()
@@ -491,9 +532,9 @@ impl State {
                 );
             }
         }
-        if let Some(range) = self.selection {
+        if let Some(range) = self.selection.filter(|_| !self.selecting) {
             layers = layers.push(
-                container(
+                container(motion::effect(
                     container(
                         row![
                             text(format!(
@@ -533,7 +574,12 @@ impl State {
                     )
                     .padding(design::CONTROL_GAP as u16)
                     .style(design::popover),
-                )
+                    motion::Visual {
+                        opacity: self.motion.value(motion::Key::Selection, 1.0),
+                        ..Default::default()
+                    },
+                    p.surf,
+                ))
                 .align_right(Length::Fill)
                 .align_bottom(Length::Fill),
             );
@@ -553,11 +599,17 @@ impl State {
         }
         let mut body = column![heading, layers].spacing(design::CONTROL_GAP);
         body = body.push(text(tr("Active · Away · Untagged · Now     Drag to select · Shift-drag to extend · Enter to tag")).size(design::LABEL).color(p.text3));
-        container(body)
-            .padding(design::CARD_PADDING)
-            .height(Length::Fill)
-            .style(panel)
-            .into()
+        motion::effect(
+            container(body)
+                .padding(design::CARD_PADDING)
+                .height(Length::Fill)
+                .style(panel),
+            motion::Visual {
+                opacity: self.motion.value(motion::Key::Date, 1.0),
+                ..Default::default()
+            },
+            p.surf,
+        )
     }
     pub(super) fn day_summary(&self) -> Element<'_, Message> {
         let p = design::Palette::new(self.theme.palette().background.r < 0.5);
@@ -569,7 +621,13 @@ impl State {
                         .width(Length::Fill)
                         .on_press(Message::Tab(index))
                         .height(design::SEGMENT_ITEM)
-                        .style(design::segment(self.tab == index)),
+                        .style(move |theme, status| {
+                            let mut style = design::segment(self.tab == index)(theme, status);
+                            if self.tab == index {
+                                style.background = None;
+                            }
+                            style
+                        }),
                 )
             },
         );
@@ -592,10 +650,20 @@ impl State {
                 });
             rows = rows.push(
                 row![
-                    button(text(if highlighted { "⌄" } else { "›" }))
-                        .on_press(Message::ExpandSummary(entry.key.to_string()))
-                        .style(design::ghost)
-                        .padding(0),
+                    button(motion::chevron(
+                        if highlighted
+                            || self.summary_closing.as_deref() == Some(entry.key.as_ref())
+                        {
+                            self.motion
+                                .value(motion::Key::Summary, f32::from(highlighted))
+                        } else {
+                            0.0
+                        },
+                        p.text2
+                    ))
+                    .on_press(Message::ExpandSummary(entry.key.to_string()))
+                    .style(design::ghost)
+                    .padding(0),
                     self.app_icon(
                         entry.app.as_deref().unwrap_or(&entry.key),
                         entry.app_name.as_deref().unwrap_or(&entry.label)
@@ -640,9 +708,12 @@ impl State {
                 .spacing(design::CONTROL_GAP)
                 .align_y(Alignment::Center),
             );
-            if highlighted && self.tab == 1 {
+            let closing = self.motion.active(motion::Key::Summary)
+                && self.summary_closing.as_deref() == Some(entry.key.as_ref());
+            if (highlighted || closing) && self.tab == 1 {
+                let mut children = column![].spacing(design::SMALL_GAP);
                 for doc in &self.documents {
-                    rows = rows.push(
+                    children = children.push(
                         row![
                             text(format!("└ {}", doc.label))
                                 .size(design::META)
@@ -656,6 +727,18 @@ impl State {
                         .spacing(design::CONTROL_GAP),
                     );
                 }
+                let progress = self
+                    .motion
+                    .value(motion::Key::Summary, f32::from(highlighted));
+                rows = rows.push(motion::effect(
+                    children,
+                    motion::Visual {
+                        opacity: progress,
+                        height: progress,
+                        ..Default::default()
+                    },
+                    p.side,
+                ));
             }
         }
         if self.rows.is_empty() {
@@ -679,9 +762,16 @@ impl State {
             ]
             .spacing(design::CONTROL_GAP)
             .align_y(Alignment::Center),
-            container(tabs)
-                .padding(design::SEGMENT_PADDING)
-                .style(design::segment_track),
+            container(motion::effect(
+                tabs,
+                motion::Visual {
+                    segment: Some(self.motion.value(motion::Key::Tab, self.tab_position())),
+                    ..Default::default()
+                },
+                p.side
+            ))
+            .padding(design::SEGMENT_PADDING)
+            .style(design::segment_track),
             text_input(&tr("Filter apps and window titles"), &self.summary_search)
                 .on_input(Message::SummaryFilter)
                 .id("day-filter")

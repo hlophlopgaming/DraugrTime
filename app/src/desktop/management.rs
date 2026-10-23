@@ -249,6 +249,7 @@ impl State {
             return Task::none();
         };
         let shared = runtime.shared.clone();
+        self.finish_motion();
         self.management.loading = true;
         self.management.error.clear();
         Task::perform(
@@ -311,6 +312,8 @@ impl State {
             }
             Edit::Search(s) => self.management.search = s,
             Edit::Collapse(id) => {
+                let closed = self.management.collapsed.contains(&id);
+                self.animate(motion::Key::Tree(id), f32::from(!closed), f32::from(closed));
                 if !self.management.collapsed.remove(&id) {
                     self.management.collapsed.insert(id);
                 }
@@ -697,7 +700,7 @@ fn last_used(ts: Option<i64>, now: i64) -> String {
             .unwrap_or_else(|| "–".into())
     }
 }
-fn switch(on: bool, message: Message, p: design::Palette) -> Element<'static, Message> {
+pub(super) fn switch(on: bool, message: Message, p: design::Palette) -> Element<'static, Message> {
     let knob = container(space::horizontal())
         .width(design::SWITCH_KNOB)
         .height(design::SWITCH_KNOB)
@@ -851,7 +854,31 @@ impl State {
                 .map(|s| s.days.iter().sum::<i64>())
                 .max()
                 .unwrap_or(1);
-            for (tag, depth) in tree_rows(&data.tags, &ui.collapsed, &ui.search) {
+            let collapsed: HashSet<_> = ui
+                .collapsed
+                .iter()
+                .copied()
+                .filter(|id| !self.motion.active(motion::Key::Tree(*id)))
+                .collect();
+            for (tag, depth) in tree_rows(&data.tags, &collapsed, &ui.search) {
+                let mut visibility: f32 = 1.0;
+                let mut parent = tag.parent_id;
+                for _ in 0..data.tags.len() {
+                    let Some(id) = parent else {
+                        break;
+                    };
+                    if ui.search.is_empty() {
+                        visibility = visibility.min(self.motion.value(
+                            motion::Key::Tree(id),
+                            f32::from(!ui.collapsed.contains(&id)),
+                        ));
+                    }
+                    parent = data
+                        .tags
+                        .iter()
+                        .find(|tag| tag.id == id)
+                        .and_then(|tag| tag.parent_id);
+                }
                 let id = tag.id;
                 let selected = ui.tag.as_ref().and_then(|t| t.id) == Some(id);
                 let has_children = data.tags.iter().any(|t| t.parent_id == Some(id));
@@ -862,18 +889,17 @@ impl State {
                     .spacing(design::CONTROL_GAP);
                 name = name
                     .push(
-                        button(
-                            text(if has_children {
-                                if ui.collapsed.contains(&id) {
-                                    "›"
-                                } else {
-                                    "⌄"
-                                }
+                        button(motion::chevron(
+                            self.motion.value(
+                                motion::Key::Tree(id),
+                                f32::from(!ui.collapsed.contains(&id)),
+                            ),
+                            if has_children {
+                                p.text2
                             } else {
-                                ""
-                            })
-                            .size(design::BODY),
-                        )
+                                iced::Color::TRANSPARENT
+                            },
+                        ))
                         .on_press_maybe(has_children.then_some(Message::Manage(Edit::Collapse(id))))
                         .style(design::ghost)
                         .padding(0)
@@ -945,12 +971,21 @@ impl State {
                     .color(p.text3)
                     .into(),
                 );
-                rows = rows
-                    .push(container(line).style(move |_| container::Style {
-                        background: selected.then_some(p.raised.into()),
+                rows = rows.push(motion::effect(
+                    column![
+                        container(line).style(move |_| container::Style {
+                            background: selected.then_some(p.raised.into()),
+                            ..Default::default()
+                        }),
+                        divider(p)
+                    ],
+                    motion::Visual {
+                        opacity: visibility,
+                        height: visibility,
                         ..Default::default()
-                    }))
-                    .push(divider(p));
+                    },
+                    p.surf,
+                ));
             }
             if data.tags.is_empty() {
                 rows = rows.push(

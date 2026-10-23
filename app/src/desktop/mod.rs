@@ -17,6 +17,7 @@ use design::{button, text_input};
 use localization::{message as localized, tr, LocaleProvider};
 mod memory;
 mod model;
+mod motion;
 mod runtime;
 mod single_instance;
 mod startup;
@@ -110,6 +111,10 @@ pub enum Message {
     Report(reports::Edit),
     Language(Option<localization::Language>),
     Tick,
+    MotionFrame(Instant),
+    MotionChanged(bool),
+    MotionRefresh,
+    MotionUnfocused,
     Tray(tray::Event),
     Opened(window::Id),
     Close(window::Id),
@@ -120,6 +125,8 @@ pub enum Message {
     Search(String),
     Tab(usize),
     Select(Option<Range>),
+    SelectDragging(Option<Range>),
+    SelectionReleased,
     Hover(Option<(usize, usize)>),
     Highlight(String),
     Zoom(f64, Option<i64>),
@@ -181,9 +188,11 @@ struct State {
     visible: Vec<usize>,
     shown: [bool; 4],
     selection: Option<Range>,
+    selecting: bool,
     hover: Option<(usize, usize)>,
     highlight: Option<String>,
     expanded_summary: Option<String>,
+    summary_closing: Option<String>,
     summary_search: String,
     selection_tag: String,
     search: String,
@@ -196,6 +205,9 @@ struct State {
     metrics: [i64; 4],
     fixture: bool,
     expanded_tracks: [bool; 4],
+    motion: motion::Ui,
+    motion_visible: bool,
+    highlight_from: Vec<(Option<String>, f32)>,
     rec_menu: bool,
     search_open: bool,
     block_focus: bool,
@@ -306,9 +318,11 @@ impl State {
             visible: vec![0, 1, 2, 3],
             shown: [true; 4],
             selection: None,
+            selecting: false,
             hover: None,
             highlight: None,
             expanded_summary: None,
+            summary_closing: None,
             summary_search: String::new(),
             selection_tag: String::new(),
             documents: Vec::new(),
@@ -321,6 +335,9 @@ impl State {
             metrics: [0; 4],
             fixture: smoke || benchmark,
             expanded_tracks: [false; 4],
+            motion: motion::Ui::default(),
+            motion_visible: false,
+            highlight_from: Vec::new(),
             rec_menu: false,
             search_open: false,
             block_focus: false,
@@ -410,6 +427,9 @@ impl State {
         (state, Task::batch([task, system_theme]))
     }
     fn set_screen(&mut self, screen: &'static str) {
+        if self.screen != screen {
+            self.finish_motion();
+        }
         if matches!(self.screen, "Week" | "Reports") && self.screen != screen {
             self.release_reports();
         }
@@ -419,6 +439,7 @@ impl State {
         self.screen = screen;
     }
     fn apply_theme(&mut self) {
+        self.finish_motion();
         self.hourly_cache.clear();
         self.theme = native_theme(self.theme_preference.is_dark(self.system_theme));
         self.cache.clear();
@@ -448,6 +469,7 @@ impl State {
             ..window::Settings::default()
         });
         self.window = Some(id);
+        self.motion_visible = visible;
         let task = task.map(Message::Opened);
         if matches!(self.screen, "Tags" | "Rules") {
             Task::batch([task, self.refresh_management()])
@@ -488,6 +510,9 @@ impl State {
         self.last_load = Instant::now() - Duration::from_secs(5);
     }
     fn release_day(&mut self) {
+        self.selecting = false;
+        self.motion.clear();
+        self.highlight_from.clear();
         self.release_management();
         self.hourly_cache.clear();
         self.report_ui.data = None;
@@ -626,6 +651,10 @@ impl State {
         self.documents = if self.tab == 1 {
             self.expanded_summary
                 .as_ref()
+                .or(self
+                    .summary_closing
+                    .as_ref()
+                    .filter(|_| self.motion.active(motion::Key::Summary)))
                 .or(self.highlight.as_ref())
                 .map(|key| {
                     model::application_documents_iter(
@@ -656,7 +685,11 @@ impl State {
             self.all = model::empty_tracks();
             self.invalidate_load();
         }
+        self.motion.clear();
         self.rebuild();
+        if self.fixture {
+            self.animate(motion::Key::Date, 0.0, 1.0);
+        }
     }
     fn tick_demand(&self) -> ticking::TickDemand {
         let now = draugr_time_daemon::now_ms();
@@ -687,6 +720,26 @@ impl State {
                 _ => None,
             }),
         ];
+        if self
+            .motion
+            .running(self.window.is_some() && self.motion_visible)
+        {
+            subscriptions
+                .push(iced::time::every(Duration::from_millis(16)).map(Message::MotionFrame));
+        }
+        if self.window.is_some() {
+            subscriptions.push(window::events().filter_map(|(_, event)| match event {
+                window::Event::Focused => Some(Message::MotionRefresh),
+                window::Event::Unfocused => Some(Message::MotionUnfocused),
+                _ => None,
+            }));
+            use motion::MotionPreference as _;
+            subscriptions.push(
+                motion::SystemMotionPreference
+                    .changes()
+                    .map(Message::MotionChanged),
+            );
+        }
         if self.management.dragging.is_some() {
             subscriptions.push(iced::event::listen_with(|event, _, _| match event {
                 iced::Event::Mouse(iced::mouse::Event::ButtonReleased(
@@ -712,8 +765,42 @@ impl State {
     }
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::MotionFrame(now) => {
+                if self.motion.active(motion::Key::Track(2))
+                    || self.motion.active(motion::Key::Track(3))
+                {
+                    self.cache.clear();
+                    self.grid_cache.clear();
+                }
+                let summary = self.motion.active(motion::Key::Summary);
+                self.motion.advance(now);
+                if !self.motion.active(motion::Key::Highlight) {
+                    self.highlight_from.clear();
+                }
+                if summary && !self.motion.active(motion::Key::Summary) {
+                    self.summary_closing = None;
+                    self.summary();
+                }
+            }
+            Message::MotionChanged(reduced) => {
+                if reduced {
+                    self.finish_motion();
+                }
+                self.motion.set_reduced(reduced);
+            }
+            Message::MotionRefresh => {
+                self.motion_visible = true;
+                return motion::read_preference();
+            }
+            Message::MotionUnfocused => {
+                self.motion_visible = false;
+                self.finish_motion();
+            }
             Message::Report(event) => return self.edit_report(event),
-            Message::Edit(event) => return self.edit(event),
+            Message::Edit(event) => {
+                self.selecting = false;
+                return self.edit(event);
+            }
             Message::Manage(event) => return self.edit_management(event),
             Message::Rule(event) => {
                 let refresh = matches!(
@@ -750,8 +837,19 @@ impl State {
                         return self.open(true);
                     }
                     "start" => Message::Start,
-                    "pause" => Message::Pause(None),
-                    "pause15" => Message::Pause(Some(900_000)),
+                    id if tray::pause_duration(id).is_some() => {
+                        Message::Pause(tray::pause_duration(id))
+                    }
+                    "extend5" | "extend15" if self.status.state == "paused" => {
+                        let minutes = if event == "extend5" { 5 } else { 15 };
+                        let remaining = self
+                            .status
+                            .paused_until
+                            .unwrap_or(0)
+                            .saturating_sub(draugr_time_daemon::now_ms())
+                            .max(0);
+                        Message::Pause(Some(remaining + minutes * 60_000))
+                    }
                     "resume" => Message::Resume,
                     "quick5" => Message::Edit(tagging::Edit::Quick(5)),
                     "quick15" => Message::Edit(tagging::Edit::Quick(15)),
@@ -764,6 +862,13 @@ impl State {
             Message::Tray(tray::Event::Status(status)) => {
                 let returned = self.status.computer.activity != "active"
                     && status.computer.activity == "active";
+                if (self.status.state == "paused") != (status.state == "paused") {
+                    self.animate(
+                        motion::Key::Pause,
+                        f32::from(self.status.state == "paused"),
+                        f32::from(status.state == "paused"),
+                    );
+                }
                 self.status = (*status).clone();
                 if returned && self.observe_away() {
                     return self.open(true);
@@ -907,6 +1012,7 @@ impl State {
                 let stale = self.loaded_day != Some(self.day)
                     || (today && self.last_load.elapsed() > Duration::from_secs(2));
                 if !self.fixture && !self.loading && stale && self.window.is_some() {
+                    self.finish_motion();
                     if let Some(runtime) = self.runtime.as_ref() {
                         let day = self.day;
                         let cursor = self.load_cursor.clone();
@@ -1005,7 +1111,13 @@ impl State {
                     Err(error) => self.error = error,
                 }
             }
-            Message::Opened(id) => self.window = Some(id),
+            Message::Opened(id) => {
+                self.window = Some(id);
+                if self.autostart_question() {
+                    self.animate(motion::Key::Dialog, 0.0, 1.0);
+                }
+                return motion::read_preference();
+            }
             Message::Close(id) => {
                 if self.tray.is_some() {
                     self.window = None;
@@ -1051,6 +1163,17 @@ impl State {
                 self.rebuild();
             }
             Message::Tab(tab) => {
+                if self.tab != tab {
+                    self.animate(
+                        motion::Key::Tab,
+                        self.tab_position(),
+                        match tab {
+                            1 => 0.0,
+                            2 => 1.0,
+                            _ => 2.0,
+                        },
+                    );
+                }
                 self.tab = tab;
                 self.highlight = None;
                 self.limit = 50;
@@ -1058,7 +1181,24 @@ impl State {
                 self.grid_cache.clear();
                 self.summary();
             }
+            Message::SelectDragging(selection) => {
+                self.selecting = true;
+                self.selection = selection;
+                self.highlight = None;
+                self.summary();
+            }
+            Message::SelectionReleased => {
+                if self.selecting {
+                    self.selecting = false;
+                    self.motion.cancel(motion::Key::Selection);
+                    self.animate(motion::Key::Selection, 0.0, 1.0);
+                }
+            }
             Message::Select(selection) => {
+                self.selecting = false;
+                if selection != self.selection {
+                    self.animate(motion::Key::Selection, 0.0, 1.0);
+                }
                 self.selection = selection;
                 self.highlight = None;
                 self.limit = 50;
@@ -1066,17 +1206,37 @@ impl State {
             }
             Message::Hover(hover) => {
                 self.block_focus = false;
+                if self.hover != hover {
+                    self.motion.cancel(motion::Key::Tooltip);
+                    if hover.is_some() {
+                        self.animate(motion::Key::Tooltip, 0.0, 1.0);
+                    }
+                }
                 self.hover = hover;
+                if hover.is_some() && self.motion.active(motion::Key::Tooltip) {
+                    return Task::perform(
+                        async {
+                            tokio::time::sleep(Duration::from_millis(design::TOOLTIP_DELAY)).await;
+                            Instant::now()
+                        },
+                        Message::MotionFrame,
+                    );
+                }
             }
             Message::Highlight(key) => {
+                motion::highlight_snapshot(
+                    &mut self.highlight_from,
+                    self.highlight.as_deref(),
+                    self.motion.value(motion::Key::Highlight, 1.0),
+                );
+                self.motion.cancel(motion::Key::Highlight);
+                self.animate(motion::Key::Highlight, 0.0, 1.0);
                 self.highlight = if self.highlight.as_ref() == Some(&key) {
                     None
                 } else {
                     Some(key)
                 };
                 self.summary();
-                self.cache.clear();
-                self.grid_cache.clear();
             }
             Message::Zoom(factor, anchor) => {
                 self.range_mode = 3;
@@ -1086,7 +1246,14 @@ impl State {
                 self.cache.clear();
                 self.grid_cache.clear();
             }
-            Message::RecMenu => self.rec_menu = !self.rec_menu,
+            Message::RecMenu => {
+                self.animate(
+                    motion::Key::Menu,
+                    f32::from(self.rec_menu),
+                    f32::from(!self.rec_menu),
+                );
+                self.rec_menu = !self.rec_menu;
+            }
             Message::ToastExpired(started) => {
                 if self.tag_toast.is_some_and(|(_, time)| time == started) {
                     self.tag_toast = None;
@@ -1094,6 +1261,11 @@ impl State {
             }
             Message::ExpandTrack(track) => {
                 if (2..=3).contains(&track) {
+                    self.animate(
+                        motion::Key::Track(track),
+                        f32::from(self.expanded_tracks[track]),
+                        f32::from(!self.expanded_tracks[track]),
+                    );
                     self.expanded_tracks[track] = !self.expanded_tracks[track];
                     self.cache.clear();
                     self.grid_cache.clear();
@@ -1121,6 +1293,17 @@ impl State {
                 self.summary();
             }
             Message::ExpandSummary(key) => {
+                let opening = self.expanded_summary.as_ref() != Some(&key);
+                self.summary_closing = if opening {
+                    None
+                } else {
+                    self.expanded_summary.clone()
+                };
+                self.animate(
+                    motion::Key::Summary,
+                    f32::from(!opening),
+                    f32::from(opening),
+                );
                 self.expanded_summary = if self.expanded_summary.as_ref() == Some(&key) {
                     None
                 } else {
@@ -1140,6 +1323,13 @@ impl State {
                 }
             }
             Message::DayRange(mode) => {
+                if self.range_mode != mode {
+                    self.animate(
+                        motion::Key::Range,
+                        self.range_mode.min(2) as f32,
+                        mode as f32,
+                    );
+                }
                 self.range_mode = mode;
                 self.view = match mode {
                     2 => self.selection.unwrap_or(self.view),
@@ -1196,10 +1386,30 @@ impl State {
                 Ok(enabled) => {
                     self.autostart_enabled = enabled;
                     self.autostart_error.clear();
+                    if self.settings_ui.preferences.autostart_prompt_pending {
+                        if let Err(error) = draugr_time_daemon::paths::data_dir()
+                            .map_err(|error| error.to_string())
+                            .and_then(|dir| {
+                                self.settings_ui
+                                    .answer_autostart(&dir.join("settings.json"))
+                            })
+                        {
+                            self.autostart_error = error;
+                        }
+                    }
                 }
                 Err(error) => self.autostart_error = error,
             },
             Message::Pause(duration) => {
+                if self.rec_menu {
+                    self.animate(motion::Key::Menu, 1.0, 0.0);
+                }
+                self.animate(
+                    motion::Key::Pause,
+                    f32::from(self.status.state == "paused"),
+                    1.0,
+                );
+                tray::remember_pause(duration);
                 self.rec_menu = false;
                 if let Some(runtime) = self.runtime.as_ref() {
                     if let Err(error) = runtime.pause(duration) {
@@ -1211,6 +1421,14 @@ impl State {
                 }
             }
             Message::Resume => {
+                if self.rec_menu {
+                    self.animate(motion::Key::Menu, 1.0, 0.0);
+                }
+                self.animate(
+                    motion::Key::Pause,
+                    f32::from(self.status.state == "paused"),
+                    0.0,
+                );
                 self.rec_menu = false;
                 if let Some(runtime) = self.runtime.as_ref() {
                     runtime.resume();
@@ -1247,9 +1465,19 @@ impl State {
             }
             Message::Key(key, modifiers) => {
                 use keyboard::key::Named;
+                if self.autostart_question() || self.motion.active(motion::Key::Dialog) {
+                    return if key == keyboard::Key::Named(Named::Tab) {
+                        if modifiers.shift() {
+                            widget::operation::focus_previous()
+                        } else {
+                            widget::operation::focus_next()
+                        }
+                    } else {
+                        Task::none()
+                    };
+                }
                 if self.rec_menu && key == keyboard::Key::Named(Named::Escape) {
-                    self.rec_menu = false;
-                    return Task::none();
+                    return self.update(Message::RecMenu);
                 }
                 if self.screen == "Day"
                     && self.editor.is_none()
@@ -1507,147 +1735,6 @@ impl State {
             }
         }
     }
-    fn settings(&self) -> Element<'_, Message> {
-        let mut backend=column![text(tr("Status & permissions")).size(22),text(tr("Live collector status. macOS and Wayland still require OS permissions/integration.")).size(13)].spacing(12);
-        if self.runtime.is_some() {
-            let computer = &self.status.computer;
-            backend = backend.push(
-                text(localized(
-                    "Computer: {machine} · Activity: {activity} · Recording: {recording}",
-                    &[
-                        ("machine", localization::state(&computer.machine)),
-                        ("activity", localization::state(&computer.activity)),
-                        ("recording", localization::state(&computer.recording)),
-                    ],
-                ))
-                .size(13),
-            );
-            if let Some(reason) = &computer.reason {
-                backend = backend.push(text(localization::error(reason)).size(13));
-            }
-            backend = backend
-                .push(text(localization::error(&self.status.computer_capabilities)).size(12));
-            for value in &self.status.backends {
-                backend = backend.push(
-                    text(format!(
-                        "{} · {}",
-                        tr(&value.name),
-                        localization::state(&value.state)
-                    ))
-                    .size(15),
-                );
-                if let Some(error) = &value.error {
-                    backend = backend.push(text(localization::error(error)).size(13));
-                }
-            }
-        }
-        if self.runtime.is_none() {
-            backend = backend.push(text(tr(
-                "Tracking is stopped. Press Start recording to collect activity.",
-            )));
-        }
-        let directory = draugr_time_daemon::paths::data_dir()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|e| e.to_string());
-        let folder = column![
-            text(tr("Data folder")).size(22),
-            text(directory).size(13),
-            button(text(tr("Choose folder"))).on_press(Message::Folder),
-            button(text(tr("Import ActivityWatch / Draugr JSON"))).on_press(Message::Report(reports::Edit::Import)),
-            text(tr("Import adds history atomically; overlapping event buckets are rejected. JSON export is available in Reports.")),
-            text(
-                self.pending_dir
-                    .as_ref()
-                    .map(|path| localized(
-                        "Next launch: {path}. Existing history stays in the old folder.",
-                        &[("path", path.clone())]
-                    ))
-                    .unwrap_or_else(|| {
-                        tr("The folder change takes effect after restarting Draugr Time.")
-                    })
-            )
-            .size(12)
-        ]
-        .spacing(12);
-        let autostart = column![
-            checkbox(self.autostart_enabled)
-                .label(tr("Start Draugr Time when I log in"))
-                .on_toggle(Message::AutoStart),
-            text(tr("Starts activity tracking in the tray. Turn this off here to remove it from system startup."))
-                .size(12),
-            text(localization::error(&self.autostart_error))
-                .size(12)
-                .color(Color::from_rgb8(200, 75, 75))
-        ]
-        .spacing(8);
-        let resource=column![image(image::Handle::from_bytes(crate::branding::logo(self.theme.palette().background.r < 0.5))).width(64).height(64).filter_method(image::FilterMethod::Nearest),text(tr("Draugr Time")).size(22),text(concat!("Version ", env!("CARGO_PKG_VERSION"), " · GPL-3.0-only")),button(text("https://github.com/hlophlopgaming/DraugrTime")).on_press(Message::OpenUrl("https://github.com/hlophlopgaming/DraugrTime")),row![text(tr("Created by")),button(text("hlophlopgaming")).on_press(Message::OpenUrl("https://github.com/hlophlopgaming"))].spacing(6).align_y(Alignment::Center),text(tr("Native Rust UI · tiny-skia software renderer")).size(14),text(localized("Canvas draws: {count} · max geometry build: {duration} ms",&[("count",self.stats.frames.load(Ordering::Relaxed).to_string()),("duration",format!("{:.2}",self.stats.max_build_us.load(Ordering::Relaxed) as f64/1000.0))])).size(13),text(tr("Closing the window releases its renderer and keeps recording. Open it again from the tray. Quit stops the process. Themes, tray behavior and OS permissions need verification on each platform.")).size(13)].spacing(12);
-        scrollable(
-            column![
-                container({
-                    let mut languages = column![
-                        text(tr("General")).size(design::HEADING),
-                        button(text(localized(
-                            "Theme: {theme}",
-                            &[("theme", tr(self.theme_preference.label()))]
-                        )))
-                        .on_press(Message::Theme),
-                        button(text(tr("System default"))).on_press(Message::Language(None)),
-                        text(localized(
-                            "Language: {language}",
-                            &[("language", localization::current().name().into())]
-                        ))
-                    ]
-                    .spacing(6);
-                    for language in localization::Language::ALL {
-                        languages = languages.push(
-                            button(language.name()).on_press(Message::Language(Some(language))),
-                        );
-                    }
-                    languages
-                })
-                .padding(16)
-                .style(panel),
-                container(self.privacy_settings()).padding(16).style(panel),
-                container(backend).padding(16).style(panel),
-                container(folder).padding(16).style(panel),
-                container(autostart).padding(16).style(panel),
-                container(
-                    column![
-                        text(tr("While you were away")).size(22),
-                        text(localized(
-                            "Prompt threshold: {duration}",
-                            &[(
-                                "duration",
-                                if self.away_prompt.threshold > 86_400_000 {
-                                    tr("disabled")
-                                } else {
-                                    model::duration(self.away_prompt.threshold)
-                                }
-                            )]
-                        )),
-                        row![
-                            button(text(tr("15 min")))
-                                .on_press(Message::Edit(tagging::Edit::Threshold(15))),
-                            button(text(tr("30 min")))
-                                .on_press(Message::Edit(tagging::Edit::Threshold(30))),
-                            button(text(tr("60 min")))
-                                .on_press(Message::Edit(tagging::Edit::Threshold(60))),
-                            button(text(tr("Off"))).on_press(Message::Edit(
-                                tagging::Edit::Threshold(i64::MAX / 60_000)
-                            ))
-                        ]
-                        .spacing(8)
-                    ]
-                    .spacing(8)
-                )
-                .padding(16)
-                .style(panel),
-                container(resource).padding(16).style(panel)
-            ]
-            .spacing(14),
-        )
-        .into()
-    }
     fn view(&self, _id: window::Id) -> Element<'_, Message> {
         widget::responsive(move |size| self.view_sized(size.width)).into()
     }
@@ -1657,6 +1744,32 @@ impl State {
             && (!self.runtime_test || self.onboarding_test)
         {
             return self.onboarding();
+        }
+        if self.autostart_question() || self.motion.active(motion::Key::Dialog) {
+            let p = design::Palette::new(self.theme.palette().background.r < 0.5);
+            return container(motion::effect(
+                self.autostart_dialog(),
+                motion::Visual {
+                    opacity: self
+                        .motion
+                        .value(motion::Key::Dialog, f32::from(self.autostart_question())),
+                    scale: 0.98
+                        + 0.02
+                            * self
+                                .motion
+                                .value(motion::Key::Dialog, f32::from(self.autostart_question())),
+                    ..Default::default()
+                },
+                p.bg,
+            ))
+            .padding(design::PADDING)
+            .center(Length::Fill)
+            .style(move |_| container::Style {
+                background: Some(p.bg.into()),
+                text_color: Some(p.text),
+                ..Default::default()
+            })
+            .into();
         }
         let narrow = design::narrow(width);
         let navigation = design::navigation_metrics(localization::current());
@@ -1760,24 +1873,43 @@ impl State {
                 .width(rail_item)
                 .height(navigation.item_height)
                 .style(move |_, _| widget::button::Style {
-                    background: Some(
-                        if self.status.state == "paused" {
-                            palette.away_dim
-                        } else if matches!(
-                            self.status.state.as_str(),
-                            "tracking" | "away" | "locked" | "asleep"
-                        ) {
-                            palette.accent_dim
-                        } else {
-                            Color {
-                                a: 0.1,
-                                ..palette.danger
+                    background:
+                        Some(
+                            if self.status.state == "paused"
+                                || self.motion.active(motion::Key::Pause)
+                            {
+                                motion::mix(
+                                    palette.accent_dim,
+                                    palette.away_dim,
+                                    self.motion.value(
+                                        motion::Key::Pause,
+                                        f32::from(self.status.state == "paused"),
+                                    ),
+                                )
+                            } else if matches!(
+                                self.status.state.as_str(),
+                                "tracking" | "away" | "locked" | "asleep"
+                            ) {
+                                palette.accent_dim
+                            } else {
+                                Color {
+                                    a: 0.1,
+                                    ..palette.danger
+                                }
                             }
-                        }
-                        .into(),
-                    ),
-                    text_color: if self.status.state == "paused" {
-                        palette.away_text
+                            .into(),
+                        ),
+                    text_color: if self.status.state == "paused"
+                        || self.motion.active(motion::Key::Pause)
+                    {
+                        motion::mix(
+                            palette.accent_text,
+                            palette.away_text,
+                            self.motion.value(
+                                motion::Key::Pause,
+                                f32::from(self.status.state == "paused"),
+                            ),
+                        )
                     } else if matches!(
                         self.status.state.as_str(),
                         "tracking" | "away" | "locked" | "asleep"
@@ -1829,7 +1961,7 @@ impl State {
         } else if matches!(self.screen, "Tags" | "Rules") {
             self.management_view(narrow)
         } else if self.screen == "Settings" {
-            self.settings()
+            self.settings(narrow)
         } else {
             container(
                 column![
@@ -1848,7 +1980,7 @@ impl State {
         };
         // shortcut: legacy bodies retain desktop width; replace overflow per screen in slices 2–5.
         let content: Element<'_, Message> =
-            if narrow && !matches!(self.screen, "Day" | "Week" | "Tags" | "Rules") {
+            if narrow && !matches!(self.screen, "Day" | "Week" | "Tags" | "Rules" | "Settings") {
                 scrollable(
                     container(content)
                         .width(design::LEGACY_WIDTH)
@@ -1862,7 +1994,7 @@ impl State {
                 content
             };
         let mut main = column![].spacing(design::GAP);
-        if !matches!(self.screen, "Day" | "Week" | "Tags" | "Rules") {
+        if !matches!(self.screen, "Day" | "Week" | "Tags" | "Rules" | "Settings") {
             main = main.push(text(tr(self.screen)).size(design::TITLE));
             if self.search_open {
                 main = main.push(
@@ -1941,7 +2073,7 @@ impl State {
             );
         }
         main = main.push(content).height(
-            if narrow && matches!(self.screen, "Week" | "Tags" | "Rules") {
+            if narrow && matches!(self.screen, "Week" | "Tags" | "Rules" | "Settings") {
                 Length::Shrink
             } else {
                 Length::Fill
@@ -1968,6 +2100,8 @@ impl State {
             self.week_summary()
         } else if matches!(self.screen, "Tags" | "Rules") {
             self.management_panel()
+        } else if self.screen == "Settings" {
+            self.settings_navigation(narrow)
         } else {
             details.into()
         };
@@ -2015,17 +2149,25 @@ impl State {
             .width(Length::Fill)
             .height(Length::Fill);
         let base: Element<'_, Message> = if narrow {
-            let main = if matches!(self.screen, "Week" | "Tags" | "Rules") {
+            let main = if matches!(self.screen, "Week" | "Tags" | "Rules" | "Settings") {
                 main.height(Length::Shrink)
             } else {
                 main.height(design::NARROW_MAIN_HEIGHT)
             };
             container(
-                scrollable(column![sidebar, main, right].spacing(design::GAP))
-                    .style(design::scrollbars),
+                scrollable(if self.screen == "Settings" {
+                    column![sidebar, right, main].spacing(design::GAP)
+                } else {
+                    column![sidebar, main, right].spacing(design::GAP)
+                })
+                .style(design::scrollbars),
             )
         } else {
-            container(row![sidebar, main, right])
+            container(if self.screen == "Settings" {
+                row![sidebar, right, main]
+            } else {
+                row![sidebar, main, right]
+            })
         }
         .width(Length::Fill)
         .height(Length::Fill)
@@ -2035,10 +2177,25 @@ impl State {
             ..Default::default()
         })
         .into();
-        let base = if self.rec_menu {
+        let base = if self.rec_menu || self.motion.active(motion::Key::Menu) {
             widget::stack![
                 base,
-                container(self.rec_popover()).padding(iced::Padding {
+                container(motion::effect(
+                    self.rec_popover(),
+                    motion::Visual {
+                        opacity: self
+                            .motion
+                            .value(motion::Key::Menu, f32::from(self.rec_menu)),
+                        offset: design::MOTION_OFFSET
+                            * (1.0
+                                - self
+                                    .motion
+                                    .value(motion::Key::Menu, f32::from(self.rec_menu))),
+                        ..Default::default()
+                    },
+                    palette.bg
+                ))
+                .padding(iced::Padding {
                     left: if narrow {
                         design::PADDING as f32
                     } else {

@@ -385,7 +385,16 @@
     "Any": "Any",
     "Archive": "Archive",
     "Unarchive": "Unarchive",
-    "Tag name": "Tag"
+    "Tag name": "Tag",
+    "Data & import": "Data & import",
+    "Theme": "Theme",
+    "Recording already started": "Recording already started",
+    "Start Draugr Time with your computer?": "Start Draugr Time with your computer?",
+    "No, thanks": "No, thanks",
+    "Yes, start with system": "Yes, start with system",
+    "Asked only once": "Asked only once",
+    "I'm away · don't track for": "I'm away · don't track for",
+    "About": "About"
   },
   "ru": {
     "Day": "День",
@@ -773,7 +782,16 @@
     "Any": "Любое",
     "Archive": "В архив",
     "Unarchive": "Из архива",
-    "Tag name": "Тег"
+    "Tag name": "Тег",
+    "Data & import": "Данные и импорт",
+    "Theme": "Тема",
+    "Recording already started": "Запись уже началась",
+    "Start Draugr Time with your computer?": "Запускать Draugr Time вместе с компьютером?",
+    "No, thanks": "Нет, спасибо",
+    "Yes, start with system": "Да, запускать с системой",
+    "Asked only once": "Спрашиваем только один раз",
+    "I'm away · don't track for": "Я отошёл · не записывать",
+    "About": "О программе"
   },
   "de": {
     "Day": "Tag",
@@ -1161,7 +1179,16 @@
     "Any": "Alle",
     "Archive": "Archivieren",
     "Unarchive": "Wiederherstellen",
-    "Tag name": "Tag"
+    "Tag name": "Tag",
+    "Data & import": "Daten & Import",
+    "Theme": "Design",
+    "Recording already started": "Aufzeichnung läuft bereits",
+    "Start Draugr Time with your computer?": "Draugr Time mit dem Computer starten?",
+    "No, thanks": "Nein, danke",
+    "Yes, start with system": "Ja, mit dem System starten",
+    "Asked only once": "Wird nur einmal gefragt",
+    "I'm away · don't track for": "Bin abwesend · nicht aufzeichnen für",
+    "About": "Über Draugr Time"
   },
   "fr": {
     "Day": "Jour",
@@ -1549,7 +1576,16 @@
     "Any": "Tous",
     "Archive": "Archiver",
     "Unarchive": "Désarchiver",
-    "Tag name": "Étiquette"
+    "Tag name": "Étiquette",
+    "Data & import": "Données et import",
+    "Theme": "Thème",
+    "Recording already started": "Enregistrement déjà démarré",
+    "Start Draugr Time with your computer?": "Démarrer Draugr Time avec votre ordinateur ?",
+    "No, thanks": "Non, merci",
+    "Yes, start with system": "Oui, démarrer avec le système",
+    "Asked only once": "Demandé une seule fois",
+    "I'm away · don't track for": "Absent · suspendre pendant",
+    "About": "À propos"
   },
   "es": {
     "Day": "Día",
@@ -1937,7 +1973,16 @@
     "Any": "Cualquiera",
     "Archive": "Archivar",
     "Unarchive": "Desarchivar",
-    "Tag name": "Etiqueta"
+    "Tag name": "Etiqueta",
+    "Data & import": "Datos e importación",
+    "Theme": "Tema",
+    "Recording already started": "La grabación ya comenzó",
+    "Start Draugr Time with your computer?": "¿Iniciar Draugr Time con el equipo?",
+    "No, thanks": "No, gracias",
+    "Yes, start with system": "Sí, iniciar con el sistema",
+    "Asked only once": "Solo se pregunta una vez",
+    "I'm away · don't track for": "Estoy ausente · no registrar durante",
+    "About": "Acerca de"
   },
   "pt": {
     "Day": "Dia",
@@ -2325,7 +2370,16 @@
     "Any": "Qualquer",
     "Archive": "Arquivar",
     "Unarchive": "Desarquivar",
-    "Tag name": "Etiqueta"
+    "Tag name": "Etiqueta",
+    "Data & import": "Dados e importação",
+    "Theme": "Tema",
+    "Recording already started": "Gravação já iniciada",
+    "Start Draugr Time with your computer?": "Iniciar Draugr Time com o computador?",
+    "No, thanks": "Não, obrigado",
+    "Yes, start with system": "Sim, iniciar com o sistema",
+    "Asked only once": "Perguntado apenas uma vez",
+    "I'm away · don't track for": "Estou ausente · não registrar por",
+    "About": "Sobre"
   },
   "zh": {
     "Day": "日视图",
@@ -2713,7 +2767,16 @@
     "Any": "任意",
     "Archive": "归档",
     "Unarchive": "取消归档",
-    "Tag name": "标签"
+    "Tag name": "标签",
+    "Data & import": "数据与导入",
+    "Theme": "主题",
+    "Recording already started": "记录已开始",
+    "Start Draugr Time with your computer?": "随电脑启动 Draugr Time？",
+    "No, thanks": "不用，谢谢",
+    "Yes, start with system": "是，随系统启动",
+    "Asked only once": "仅询问一次",
+    "I'm away · don't track for": "我离开了 · 暂停记录",
+    "About": "关于"
   },
   "ja": {
     "Day": "日",
@@ -3101,6 +3164,15 @@
     "Any": "すべて",
     "Archive": "アーカイブ",
     "Unarchive": "アーカイブ解除",
-    "Tag name": "タグ"
+    "Tag name": "タグ",
+    "Data & import": "データとインポート",
+    "Theme": "テーマ",
+    "Recording already started": "記録は開始済みです",
+    "Start Draugr Time with your computer?": "パソコンと一緒に Draugr Time を起動しますか？",
+    "No, thanks": "いいえ",
+    "Yes, start with system": "はい、自動起動する",
+    "Asked only once": "確認は一度だけです",
+    "I'm away · don't track for": "離席中 · 記録を一時停止",
+    "About": "このアプリについて"
   }
 }

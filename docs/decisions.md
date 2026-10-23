@@ -998,3 +998,67 @@ category import/export is explicitly a separate later M12 item requiring verifie
 research. Its import button is disabled with an explanatory tooltip; Export writes an
 explicitly versioned native Draugr Time JSON configuration, never an imitation AW file.
 Settings, tray, autostart and animations remain later slices.
+
+## 2026-10-23 — M12 slice 5: Settings sections, native tray and autostart question
+
+- Keep the six Settings sections in a 220 px list between the rail and the main
+  card, matching the supplied Settings artboard. At narrow widths use wrapping
+  section buttons above the selected card. Section changes retain unsaved privacy
+  and schedule fields; chips edit the same drafts and require Save.
+- Reuse the startup provider, atomic JSON preferences and recording controls.
+  Completing new-user onboarding arms `autostart_prompt_pending`; its default is
+  false, so older settings do not ask existing users. Persist an answer only after
+  successful startup registration, and retain the question on errors. This is a
+  settings-file addition, not a database schema change.
+- Render the question as the only interactive view, on the theme background. This
+  keeps Tab within the dialog and suppresses Day shortcuts; background collection
+  continues. If collection failed, show Not recording and the actual error rather
+  than claiming recording started. The dimmed underlying mockup is omitted to avoid
+  leaving hidden controls keyboard-accessible.
+- Use native submenus and checkmarks for the five timed tray pauses. The last
+  preset is remembered for this process and updated by both window and tray actions.
+  Resume and +5/+15 use the existing pause implementation. Countdown label changes
+  update text/tooltip only; regenerate the tray icon only when its state color changes.
+- Preserve the existing selected-day tray total with its explicit label. Computing
+  an always-current today total while the window is closed requires separate sampler
+  aggregation; do not add a per-second SQLite scan to a visual redesign.
+- Keep the existing five-minute idle threshold, away-prompt presets, history import,
+  report export and schedule semantics. Configurable idle thresholds, a global repeat
+  shortcut, pause restoration after restart, backups and ActivityWatch categories
+  are not implemented by this visual slice. Backups/categories and durable pauses
+  remain separate PLAN.md work; motion remains slice 6.
+
+## 2026-10-23 — M12 slice 6: bounded motion and reduced-motion policy
+
+- Keep transition values in desktop state, keyed by the affected track/control/tree
+  branch. Use the design's durations and cubic-bezier(0.2, 0.7, 0.2, 1) for ease-out;
+  highlight/date are linear and segmented/pause transitions use smooth ease-in-out.
+  Retarget from the current value. Highlight retargets retain a small mixture of
+  highlight keys, rather than cloning events or jumping to the previous target.
+- A 16 ms subscription exists only for active, visible, focused transitions. Stop
+  and settle on loss of focus, hiding/closing, reduced motion, theme changes and
+  history loads. Unfocused windows settle instantly, which also covers minimization
+  without adding OS-specific polling. A tooltip's 120 ms delay uses a single wakeup;
+  the frame subscription starts only for its 100 ms fade.
+- Put native reduced-motion reads and change subscriptions behind MotionPreference.
+  GNOME enable-animations and KDE AnimationDurationFactor are read via the local
+  Settings portal, with live SettingChanged updates. Windows uses
+  SPI_GETCLIENTAREAANIMATION; macOS uses NSWorkspace's accessibility display
+  preference. Refresh on focus. Missing/invalid settings conservatively skip motion.
+  Windows/macOS do not acquire a permanent polling or notification thread.
+- Reuse cached timeline event geometry for highlight/selection/menu frames. Fade
+  highlights and grow applied tags in the canvas overlay. Track expansion changes
+  layout, so it invalidates geometry; clip tracks and labels individually to avoid
+  drawing into neighbouring tracks while their height changes. Collapsed strips
+  fade out as lanes fade/slide in. Keep selection outlines immediate; reveal the
+  action bar only on pointer release.
+- The shared effect widget clips/reveals children and moves/scales them without a
+  screenshot texture or a second renderer. It preserves child state and forwards
+  dropdown overlays; invisible/clipped controls do not receive focus or clicks.
+  Fade against the known theme surface rather than retaining raster snapshots.
+- Do not retain a second day of events for cross-fading. Native date changes that
+  load history settle immediately, following the spec's instruction never to animate
+  loading/recomputation. Already-available fixture dates use a 140 ms content fade,
+  rather than an old/new cross-fade. Existing platform menus/pick-list internals keep
+  their toolkit behaviour. Native lifecycle, accessibility-setting propagation and
+  idle CPU/PSS still need real-desktop verification.

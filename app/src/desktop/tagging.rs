@@ -220,6 +220,7 @@ impl State {
                                 self.away_range = None;
                                 let started = Instant::now();
                                 self.tag_toast = Some((Range::new(start, end), started));
+                                self.animate(motion::Key::Tag, 0.0, 1.0);
                                 return Task::perform(
                                     async move {
                                         tokio::time::sleep(Duration::from_secs(6)).await;

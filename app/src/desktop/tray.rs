@@ -5,7 +5,7 @@ use super::{
 use draugr_time_daemon::Status;
 use std::cell::RefCell;
 use tray_icon::{
-    menu::{Menu, MenuEvent, MenuItem},
+    menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu},
     Icon, TrayIcon, TrayIconBuilder,
 };
 
@@ -14,8 +14,10 @@ pub struct NativeTray {
     status: MenuItem,
     activity: MenuItem,
     total: MenuItem,
-    pause: MenuItem,
+    pauses: Vec<CheckMenuItem>,
+    pause_menu: Submenu,
     resume: MenuItem,
+    extensions: Vec<MenuItem>,
     /// What the tray currently shows. `update` runs every second; menu text and the
     /// icon are only pushed to the OS when they change (on Linux every `set_icon`
     /// writes a new PNG for the indicator).
@@ -31,7 +33,49 @@ struct Shown {
     total: String,
     pause: bool,
     resume: bool,
+    last_pause: i64,
 }
+pub fn pause_duration(id: &str) -> Option<i64> {
+    match id {
+        "pause5" => Some(300_000),
+        "pause10" => Some(600_000),
+        "pause15" => Some(900_000),
+        "pause30" => Some(1_800_000),
+        "pause60" => Some(3_600_000),
+        _ => None,
+    }
+}
+static LAST_PAUSE: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(15);
+
+pub fn remember_pause(duration: Option<i64>) {
+    if let Some(duration) =
+        duration.filter(|value| [300_000, 600_000, 900_000, 1_800_000, 3_600_000].contains(value))
+    {
+        LAST_PAUSE.store(duration / 60_000, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+fn pause_label(minutes: i64) -> String {
+    super::localized("{count} min", &[("count", minutes.to_string())])
+}
+
+#[cfg(test)]
+mod pause_tests {
+    use super::*;
+    #[test]
+    fn tray_has_only_the_five_timed_pause_presets() {
+        for minutes in [5, 10, 15, 30, 60] {
+            assert_eq!(
+                pause_duration(&format!("pause{minutes}")),
+                Some(minutes * 60_000)
+            );
+        }
+        for id in ["pause", "pause0", "pause999", "resume"] {
+            assert_eq!(pause_duration(id), None);
+        }
+    }
+}
+
 impl NativeTray {
     pub fn new() -> Result<Self, String> {
         channel();
@@ -50,14 +94,52 @@ impl NativeTray {
         let quick = item("quick15", "Tag last 15 minutes", true);
         let quick5 = item("quick5", "Tag last 5 minutes", true);
         let quick60 = item("quick60", "Tag last hour", true);
-        let pause = item("pause", "Pause until resumed", false);
-        let pause15 = item("pause15", "Pause for 15 minutes", true);
+        let pause_menu = Submenu::new(tr("I'm away · don't track for"), true);
+        let mut pauses = Vec::new();
+        for minutes in [5, 10, 15, 30, 60] {
+            let pause = CheckMenuItem::with_id(
+                format!("pause{minutes}"),
+                pause_label(minutes),
+                false,
+                minutes == 15,
+                None,
+            );
+            pause_menu.append(&pause).map_err(|e| e.to_string())?;
+            pauses.push(pause);
+        }
+        let hint = item("pause_hint", "Turns back on by itself", false);
+        pause_menu.append(&hint).map_err(|e| e.to_string())?;
         let resume = item("resume", "Resume tracking", false);
+        let extensions: Vec<_> = [5, 15]
+            .into_iter()
+            .map(|minutes| {
+                MenuItem::with_id(
+                    format!("extend{minutes}"),
+                    format!("+{}", pause_label(minutes)),
+                    false,
+                    None,
+                )
+            })
+            .collect();
         let settings = item("settings", "Settings", true);
         let quit = item("quit", "Quit Draugr Time", true);
         menu.append_items(&[
-            &open, &status, &activity, &total, &start, &quick, &quick5, &quick60, &pause, &pause15,
-            &resume, &settings, &quit,
+            &status,
+            &activity,
+            &total,
+            &PredefinedMenuItem::separator(),
+            &open,
+            &start,
+            &quick5,
+            &quick,
+            &quick60,
+            &pause_menu,
+            &resume,
+            &extensions[0],
+            &extensions[1],
+            &PredefinedMenuItem::separator(),
+            &settings,
+            &quit,
         ])
         .map_err(|e| e.to_string())?;
         let icon = TrayIconBuilder::new()
@@ -71,8 +153,10 @@ impl NativeTray {
             status,
             activity,
             total,
-            pause,
+            pauses,
+            pause_menu,
             resume,
+            extensions,
             shown: RefCell::new(None),
             labels,
         })
@@ -97,7 +181,15 @@ impl NativeTray {
             _ => ("Not recording", crate::branding::TRAY_NOT_RECORDING),
         };
         let next = Shown {
-            label: tr(label),
+            label: if let Some(until) = status.paused_until.filter(|_| state == "paused") {
+                format!(
+                    "{} · {}",
+                    tr(label),
+                    model::duration(until.saturating_sub(draugr_time_daemon::now_ms()).max(0))
+                )
+            } else {
+                tr(label)
+            },
             language: localization::current(),
             color,
             activity: status
@@ -117,10 +209,18 @@ impl NativeTray {
             ),
             pause: !state.is_empty() && state != "preview" && state != "paused",
             resume: state == "paused",
+            last_pause: LAST_PAUSE.load(std::sync::atomic::Ordering::Relaxed),
         };
         let mut shown = self.shown.borrow_mut();
         let old = shown.as_ref();
         if old.is_none_or(|old| old.language != next.language) {
+            self.pause_menu.set_text(tr("I'm away · don't track for"));
+            for (item, minutes) in self.pauses.iter().zip([5, 10, 15, 30, 60]) {
+                item.set_text(pause_label(minutes));
+            }
+            for (item, minutes) in self.extensions.iter().zip([5, 15]) {
+                item.set_text(format!("+{}", pause_label(minutes)));
+            }
             for (item, key) in &self.labels {
                 item.set_text(tr(key));
             }
@@ -134,14 +234,27 @@ impl NativeTray {
         if old.is_none_or(|old| old.total != next.total) {
             self.total.set_text(&next.total);
         }
-        if old.is_none_or(|old| old.pause != next.pause) {
-            self.pause.set_enabled(next.pause);
+        for (item, minutes) in self.pauses.iter().zip([5, 10, 15, 30, 60]) {
+            let checked = minutes == next.last_pause;
+            if item.is_checked() != checked {
+                item.set_checked(checked);
+            }
+        }
+        if old.is_none_or(|old| (old.pause, old.resume) != (next.pause, next.resume)) {
+            for item in &self.pauses {
+                item.set_enabled(next.pause || next.resume);
+            }
         }
         if old.is_none_or(|old| old.resume != next.resume) {
             self.resume.set_enabled(next.resume);
+            for item in &self.extensions {
+                item.set_enabled(next.resume);
+            }
         }
-        if old.is_none_or(|old| (&old.label, old.color) != (&next.label, next.color)) {
+        if old.is_none_or(|old| old.color != next.color) {
             let _ = self.icon.set_icon(Some(Self::image(next.color)));
+        }
+        if old.is_none_or(|old| old.label != next.label) {
             let _ = self
                 .icon
                 .set_tooltip(Some(format!("Draugr Time · {}", next.label)));
@@ -303,7 +416,7 @@ mod linux {
             let _: () = proxy
                 .call(
                     "Event",
-                    &(1_i32, "clicked", zbus::zvariant::Value::from(0_i32), 0_u32),
+                    &(5_i32, "clicked", zbus::zvariant::Value::from(0_i32), 0_u32),
                 )
                 .unwrap();
             let event = receiver.try_recv().unwrap();

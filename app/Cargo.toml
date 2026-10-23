@@ -31,7 +31,7 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphic
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "libc", "NSWorkspace", "NSImage", "NSBitmapImageRep", "NSImageRep"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "libc", "NSWorkspace", "NSAccessibility", "NSImage", "NSBitmapImageRep", "NSImageRep"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSData", "NSDictionary"] }
 
 [target.'cfg(target_os = "windows")'.build-dependencies]

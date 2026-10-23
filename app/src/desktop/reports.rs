@@ -1042,6 +1042,7 @@ impl State {
                 };
                 let shared = runtime.shared.clone();
                 let week = self.screen == "Week";
+                self.finish_motion();
                 self.report_ui.loading = true;
                 return Task::perform(
                     async move {
