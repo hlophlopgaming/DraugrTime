@@ -16,6 +16,7 @@
 **自动记录时间，数据只留在你的电脑上。**<br>
 在时间轴上看清一天的时间都去了哪里，把时间归到项目，生成真实的报告。免费且私密。
 
+[![Listed on Remade](https://remade.wiki/badges/listed-on-remade-classic.svg)](https://remade.wiki/projects/draugr-time/)
 [![CI](https://github.com/hlophlopgaming/DraugrTime/actions/workflows/ci.yml/badge.svg)](https://github.com/hlophlopgaming/DraugrTime/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-informational)

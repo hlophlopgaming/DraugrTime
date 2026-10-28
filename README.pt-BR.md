@@ -16,6 +16,7 @@
 **Controle de tempo automático que fica no seu computador.**<br>
 Veja em uma linha do tempo para onde foi o seu dia, atribua tempo a projetos e tenha relatórios honestos. Gratuito e privado.
 
+[![Listed on Remade](https://remade.wiki/badges/listed-on-remade-classic.svg)](https://remade.wiki/projects/draugr-time/)
 [![CI](https://github.com/hlophlopgaming/DraugrTime/actions/workflows/ci.yml/badge.svg)](https://github.com/hlophlopgaming/DraugrTime/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-informational)

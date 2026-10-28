@@ -16,6 +16,7 @@
 **Un suivi du temps automatique qui reste sur votre ordinateur.**<br>
 Voyez où est passée votre journée sur une timeline, associez votre temps à des projets et obtenez des rapports fiables. Gratuit et privé.
 
+[![Listed on Remade](https://remade.wiki/badges/listed-on-remade-classic.svg)](https://remade.wiki/projects/draugr-time/)
 [![CI](https://github.com/hlophlopgaming/DraugrTime/actions/workflows/ci.yml/badge.svg)](https://github.com/hlophlopgaming/DraugrTime/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-informational)

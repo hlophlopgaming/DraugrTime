@@ -16,6 +16,7 @@
 **データがあなたのパソコンから出ない、自動タイムトラッキング。**<br>
 1日の時間がどこに消えたのかをタイムラインで確認し、時間をプロジェクトに割り当て、正直なレポートを得られます。無料でプライベート。
 
+[![Listed on Remade](https://remade.wiki/badges/listed-on-remade-classic.svg)](https://remade.wiki/projects/draugr-time/)
 [![CI](https://github.com/hlophlopgaming/DraugrTime/actions/workflows/ci.yml/badge.svg)](https://github.com/hlophlopgaming/DraugrTime/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-informational)

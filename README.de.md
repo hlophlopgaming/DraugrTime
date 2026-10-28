@@ -16,6 +16,7 @@
 **Automatische Zeiterfassung, die auf deinem Computer bleibt.**<br>
 Sieh auf einer Zeitleiste, wo dein Tag geblieben ist, ordne Zeit Projekten zu und erhalte ehrliche Berichte. Kostenlos und privat.
 
+[![Listed on Remade](https://remade.wiki/badges/listed-on-remade-classic.svg)](https://remade.wiki/projects/draugr-time/)
 [![CI](https://github.com/hlophlopgaming/DraugrTime/actions/workflows/ci.yml/badge.svg)](https://github.com/hlophlopgaming/DraugrTime/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-informational)
