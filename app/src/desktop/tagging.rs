@@ -30,6 +30,8 @@ pub struct Editor {
     pub range_id: Option<i64>,
     pub name: String,
     pub note: String,
+    /// "Last N minutes" for a new range: rewrites `start` relative to `end`.
+    pub minutes: String,
     pub start: String,
     pub end: String,
     pub color: String,
@@ -48,6 +50,7 @@ pub enum Edit {
     Transform(i64, Range),
     Name(String),
     Note(String),
+    Minutes(String),
     Start(String),
     End(String),
     Save(bool),
@@ -55,6 +58,8 @@ pub enum Edit {
     Cancel,
     Undo,
     Quick(i64),
+    /// "Tag last N minutes…": opens the editor with the minutes field focused.
+    QuickCustom,
     Color(String),
     Archive(bool),
     SaveTag,
@@ -65,6 +70,9 @@ pub enum Edit {
     IgnoreAway,
     Threshold(i64),
 }
+
+/// Longest "last N minutes" range: one day.
+pub const MAX_QUICK_MINUTES: i64 = 24 * 60;
 
 fn timestamp(value: &str) -> Result<i64, String> {
     chrono::DateTime::parse_from_rfc3339(value)
@@ -137,7 +145,34 @@ impl State {
                 self.set_screen("Day");
                 self.selection = Some(Range::new((end - minutes * 60_000).max(0), end));
                 let focus = self.edit(Edit::Open);
+                if let Some(e) = &mut self.editor {
+                    e.minutes = minutes.to_string();
+                }
                 return Task::batch([self.open(true), focus]);
+            }
+            Edit::QuickCustom => {
+                let opened = self.edit(Edit::Quick(15));
+                if let Some(e) = &mut self.editor {
+                    e.minutes.clear();
+                }
+                return Task::batch([opened, widget::operation::focus("tag-minutes")]);
+            }
+            Edit::Minutes(value) => {
+                if let Some(e) = &mut self.editor {
+                    let value: String =
+                        value.chars().filter(char::is_ascii_digit).take(4).collect();
+                    let minutes = value
+                        .parse::<i64>()
+                        .ok()
+                        .filter(|m| (1..=MAX_QUICK_MINUTES).contains(m));
+                    if let (Some(minutes), Ok(end)) = (minutes, timestamp(&e.end)) {
+                        let start = (end - minutes * 60_000).max(0);
+                        e.start = local_timestamp(start);
+                        e.overlap = false;
+                        self.selection = Some(Range::new(start, end));
+                    }
+                    e.minutes = value;
+                }
             }
             Edit::Transform(id, range) => {
                 let _ = self.edit(Edit::Range(id));
@@ -429,6 +464,31 @@ impl State {
             {
                 let name = model::tag_path(&self.tags, id);
                 body = body.push(button(text(name.clone())).on_press(edit(Edit::Name(name))));
+            }
+            if e.range_id.is_none() {
+                let mut quick = row![text(tr("Last")).size(design::LABEL)]
+                    .spacing(8)
+                    .align_y(iced::Alignment::Center);
+                for minutes in [5, 15, 30, 60] {
+                    quick = quick.push(
+                        button(text(model::duration(minutes * 60_000)).size(design::LABEL))
+                            .on_press(edit(Edit::Minutes(minutes.to_string())))
+                            .style(if e.minutes == minutes.to_string() {
+                                design::primary
+                            } else {
+                                design::secondary
+                            }),
+                    );
+                }
+                quick = quick
+                    .push(
+                        text_input(&tr("Minutes"), &e.minutes)
+                            .id("tag-minutes")
+                            .on_input(move |v| edit(Edit::Minutes(v)))
+                            .width(iced::Length::Fixed(design::QUICK_MINUTES)),
+                    )
+                    .push(text(tr("min")).size(design::LABEL));
+                body = body.push(quick.wrap());
             }
             body = body
                 .push(

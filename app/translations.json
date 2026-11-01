@@ -394,7 +394,11 @@
     "Yes, start with system": "Yes, start with system",
     "Asked only once": "Asked only once",
     "I'm away · don't track for": "I'm away · don't track for",
-    "About": "About"
+    "About": "About",
+    "Tag last N minutes…": "Tag last N minutes…",
+    "Last": "Last",
+    "Minutes": "Minutes",
+    "min": "min"
   },
   "ru": {
     "Day": "День",
@@ -791,7 +795,11 @@
     "Yes, start with system": "Да, запускать с системой",
     "Asked only once": "Спрашиваем только один раз",
     "I'm away · don't track for": "Я отошёл · не записывать",
-    "About": "О программе"
+    "About": "О программе",
+    "Tag last N minutes…": "Тег за последние N минут…",
+    "Last": "Последние",
+    "Minutes": "Минуты",
+    "min": "мин"
   },
   "de": {
     "Day": "Tag",
@@ -1188,7 +1196,11 @@
     "Yes, start with system": "Ja, mit dem System starten",
     "Asked only once": "Wird nur einmal gefragt",
     "I'm away · don't track for": "Bin abwesend · nicht aufzeichnen für",
-    "About": "Über Draugr Time"
+    "About": "Über Draugr Time",
+    "Tag last N minutes…": "Letzte N Minuten taggen…",
+    "Last": "Letzte",
+    "Minutes": "Minuten",
+    "min": "Min."
   },
   "fr": {
     "Day": "Jour",
@@ -1585,7 +1597,11 @@
     "Yes, start with system": "Oui, démarrer avec le système",
     "Asked only once": "Demandé une seule fois",
     "I'm away · don't track for": "Absent · suspendre pendant",
-    "About": "À propos"
+    "About": "À propos",
+    "Tag last N minutes…": "Étiqueter les N dernières minutes…",
+    "Last": "Dernières",
+    "Minutes": "Minutes",
+    "min": "min"
   },
   "es": {
     "Day": "Día",
@@ -1982,7 +1998,11 @@
     "Yes, start with system": "Sí, iniciar con el sistema",
     "Asked only once": "Solo se pregunta una vez",
     "I'm away · don't track for": "Estoy ausente · no registrar durante",
-    "About": "Acerca de"
+    "About": "Acerca de",
+    "Tag last N minutes…": "Etiquetar los últimos N minutos…",
+    "Last": "Últimos",
+    "Minutes": "Minutos",
+    "min": "min"
   },
   "pt": {
     "Day": "Dia",
@@ -2379,7 +2399,11 @@
     "Yes, start with system": "Sim, iniciar com o sistema",
     "Asked only once": "Perguntado apenas uma vez",
     "I'm away · don't track for": "Estou ausente · não registrar por",
-    "About": "Sobre"
+    "About": "Sobre",
+    "Tag last N minutes…": "Marcar os últimos N minutos…",
+    "Last": "Últimos",
+    "Minutes": "Minutos",
+    "min": "min"
   },
   "zh": {
     "Day": "日视图",
@@ -2776,7 +2800,11 @@
     "Yes, start with system": "是，随系统启动",
     "Asked only once": "仅询问一次",
     "I'm away · don't track for": "我离开了 · 暂停记录",
-    "About": "关于"
+    "About": "关于",
+    "Tag last N minutes…": "标记最近 N 分钟…",
+    "Last": "最近",
+    "Minutes": "分钟",
+    "min": "分钟"
   },
   "ja": {
     "Day": "日",
@@ -3173,6 +3201,10 @@
     "Yes, start with system": "はい、自動起動する",
     "Asked only once": "確認は一度だけです",
     "I'm away · don't track for": "離席中 · 記録を一時停止",
-    "About": "このアプリについて"
+    "About": "このアプリについて",
+    "Tag last N minutes…": "直近 N 分にタグ付け…",
+    "Last": "直近",
+    "Minutes": "分数",
+    "min": "分"
   }
 }

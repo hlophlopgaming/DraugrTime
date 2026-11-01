@@ -855,6 +855,7 @@ impl State {
                     "quick5" => Message::Edit(tagging::Edit::Quick(5)),
                     "quick15" => Message::Edit(tagging::Edit::Quick(15)),
                     "quick60" => Message::Edit(tagging::Edit::Quick(60)),
+                    "quick_custom" => Message::Edit(tagging::Edit::QuickCustom),
                     "quit" => Message::Quit,
                     _ => return Task::none(),
                 };

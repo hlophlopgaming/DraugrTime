@@ -94,6 +94,7 @@ impl NativeTray {
         let quick = item("quick15", "Tag last 15 minutes", true);
         let quick5 = item("quick5", "Tag last 5 minutes", true);
         let quick60 = item("quick60", "Tag last hour", true);
+        let quick_custom = item("quick_custom", "Tag last N minutes…", true);
         let pause_menu = Submenu::new(tr("I'm away · don't track for"), true);
         let mut pauses = Vec::new();
         for minutes in [5, 10, 15, 30, 60] {
@@ -133,6 +134,7 @@ impl NativeTray {
             &quick5,
             &quick,
             &quick60,
+            &quick_custom,
             &pause_menu,
             &resume,
             &extensions[0],

@@ -463,6 +463,8 @@ pub const SWITCH_KNOB: f32 = 16.0;
 pub const SWITCH_WIDTH: f32 = 34.0;
 pub const ERROR_UNDERLINE: f32 = 4.0;
 pub const MANAGER_SEARCH: f32 = 220.0;
+/// Width of the "last N minutes" field in the tag editor.
+pub const QUICK_MINUTES: f32 = 72.0;
 pub const MANAGER_DURATION: f32 = 70.0;
 pub const MANAGER_ALL: f32 = 100.0;
 pub const MANAGER_RULE_COUNT: f32 = 80.0;

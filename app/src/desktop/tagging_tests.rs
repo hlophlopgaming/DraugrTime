@@ -197,3 +197,38 @@ fn scoped_metadata_preserves_global_delete_confirmation_and_outside_day_overlap(
     let _ = state.edit(tagging::Edit::Save(false));
     assert!(state.editor.as_ref().unwrap().overlap);
 }
+
+#[test]
+fn quick_tag_minutes_field_moves_the_start_and_rejects_invalid_lengths() {
+    let (mut state, _) = State::boot();
+    state.fixture = true;
+    let _ = state.update(Message::Edit(tagging::Edit::Quick(15)));
+    let editor = state.editor.as_ref().unwrap();
+    assert_eq!(editor.minutes, "15");
+    let end = state.selection.unwrap().end;
+    assert_eq!(state.selection.unwrap().duration(), 15 * 60_000);
+
+    let _ = state.update(Message::Edit(tagging::Edit::Minutes("40".into())));
+    assert_eq!(state.selection.unwrap(), Range::new(end - 40 * 60_000, end));
+    assert_eq!(state.editor.as_ref().unwrap().minutes, "40");
+
+    for invalid in ["0", "", "1441", "abc"] {
+        let _ = state.update(Message::Edit(tagging::Edit::Minutes(invalid.into())));
+        assert_eq!(state.selection.unwrap(), Range::new(end - 40 * 60_000, end));
+    }
+    let _ = state.update(Message::Edit(tagging::Edit::Minutes("9x0".into())));
+    assert_eq!(state.editor.as_ref().unwrap().minutes, "90");
+    assert_eq!(state.selection.unwrap(), Range::new(end - 90 * 60_000, end));
+}
+
+#[test]
+fn tray_custom_quick_tag_opens_an_empty_minutes_field() {
+    let (mut state, _) = State::boot();
+    state.fixture = true;
+    state.screen = "Week";
+    let _ = state.update(Message::Tray(tray::Event::Menu("quick_custom".into())));
+    assert_eq!(state.screen, "Day");
+    let editor = state.editor.as_ref().unwrap();
+    assert!(editor.minutes.is_empty());
+    assert!(editor.range_id.is_none());
+}
