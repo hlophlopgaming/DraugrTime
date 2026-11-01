@@ -35,6 +35,9 @@ pub enum StorageError {
     NotFound,
 }
 
+/// Newest schema version (`PRAGMA user_version`) this build creates and reads.
+pub(crate) const SCHEMA_VERSION: i64 = 5;
+
 /// Local SQLite storage. Opening a database applies pending migrations atomically.
 pub struct Storage {
     connection: Connection,
@@ -66,7 +69,7 @@ impl Storage {
         connection.pragma_update(None, "synchronous", "NORMAL")?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let version: i64 = transaction.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-        if version > 5 {
+        if version > SCHEMA_VERSION {
             return Err(StorageError::UnsupportedSchema(version));
         }
         if version == 0 {
@@ -225,7 +228,9 @@ mod tests;
 #[cfg(test)]
 mod crud_tests;
 
+mod backup;
 mod records;
+pub use backup::{backup_file, verify_backup};
 pub use records::{Collection, Tag, TagRange};
 
 impl Storage {

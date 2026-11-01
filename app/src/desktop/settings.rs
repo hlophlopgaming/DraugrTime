@@ -203,7 +203,12 @@ impl State {
     pub(super) fn edit_settings(&mut self, edit: Edit) -> Task<Message> {
         let ui = &mut self.settings_ui;
         match edit {
-            Edit::Section(section) if SECTIONS.contains(&section) => ui.section = section,
+            Edit::Section(section) if SECTIONS.contains(&section) => {
+                ui.section = section;
+                if section == "Data & import" {
+                    return self.edit_backup(backups::Edit::Refresh);
+                }
+            }
             Edit::RemoveApp(masked, app) => {
                 let list = if masked { &mut ui.masked } else { &mut ui.excluded };
                 *list = app_list(list).into_iter().filter(|value| !value.eq_ignore_ascii_case(&app)).collect::<Vec<_>>().join("; ");
@@ -569,7 +574,8 @@ impl State {
                     .push(text(self.pending_dir.as_ref().map(|path| localized("Next launch: {path}. Existing history stays in the old folder.", &[("path", path.clone())])).unwrap_or_else(|| tr("The folder change takes effect after restarting Draugr Time."))).size(design::META))
                     .push(button(text(tr("Import ActivityWatch / Draugr JSON"))).on_press(Message::Report(reports::Edit::Import)))
                     .push(text(tr("Import adds history atomically; overlapping event buckets are rejected. JSON export is available in Reports.")).size(design::META))
-                    .push(button(text(tr("Open full report →"))).on_press(Message::Screen("Reports")));
+                    .push(button(text(tr("Open full report →"))).on_press(Message::Screen("Reports")))
+                    .push(self.backups_view());
             }
             "Status & permissions" => {
                 if self.runtime.is_some() {

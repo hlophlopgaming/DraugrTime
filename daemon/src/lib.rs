@@ -1,4 +1,5 @@
 pub mod api;
+pub mod backup;
 mod computer;
 mod history;
 pub mod preferences;

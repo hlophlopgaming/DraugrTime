@@ -22,6 +22,9 @@ pub fn serve(idle_threshold: u64) -> Result<(), Box<dyn Error>> {
     let directory = paths::data_dir()?;
     std::fs::create_dir_all(&directory)?;
     let token = paths::token(&directory.join("api-token"))?;
+    if let Err(error) = crate::backup::apply_pending_restore(&directory, now_ms()) {
+        eprintln!("{error}");
+    }
     let storage = Storage::open(directory.join("activity.sqlite"))?;
     let shared = Shared::new(storage, token, idle_threshold);
     *shared.preferences.lock().unwrap() =
@@ -31,6 +34,7 @@ pub fn serve(idle_threshold: u64) -> Result<(), Box<dyn Error>> {
     shared.begin_recording(now_ms())?;
     shared.set_pause_file(directory.join("pause.json"));
     shared.restore_pause(now_ms())?;
+    crate::backup::spawn_scheduler(shared.clone(), directory.clone());
     let computer = start_computer(&shared);
     let server = spawn_api(shared.clone(), listener);
     let mut tracker = Tracker::new(shared.clone());

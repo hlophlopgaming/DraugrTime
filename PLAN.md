@@ -364,11 +364,12 @@ Each milestone = one focused AI session. Do not start the next until the accepta
   5. Settings sections, tray right-click menu, first-launch autostart dialog.
   6. Motion pass: animations from the Motion table, reduced-motion support.
   - ✅ Each slice: both themes match the mockups at 1280×820 and stay usable at narrow width; text contrast ≥ 4.5:1; keyboard access and focus rings; no idle ticking or CPU/memory regression (`docs/desktop-memory.md`); Day view smooth with 5 000+ fixture events; screenshots of both themes added under `docs/screenshots/`.
-- Backups: back up now and automatic backups.
-- Notes on tagged ranges.
-- Keyboard shortcuts, "tag the last N minutes", compact mini window.
+- Backups: back up now and automatic backups. *Done: Settings → Data & import; restore applies on the next launch ([notes](docs/m12-backups-shortcuts.md)).*
+- Notes on tagged ranges. *Done: optional note in the tag editor, kept per range and shown in the block tooltip.*
+- Keyboard shortcuts, "tag the last N minutes", compact mini window. *Shortcuts (window only) and "tag the last N minutes" done ([notes](docs/m12-backups-shortcuts.md)); compact mini window remains.*
 - Documents: full file path where the OS/application exposes it.
 - **"Don't track for…" timed pauses (§5.10).** Replace the current tray items "Pause until resumed" and "Pause for 15 minutes" with presets 5 / 10 / 15 / 30 / 60 min in the tray menu and the window's status pill; remove the indefinite pause from the UI (the localhost API and CLI may keep `POST /pause` without a duration for scripts). Show remaining time, Resume now and +5 / +15 min while paused.
+  - Restart during a pause is covered: the pause end is kept in `pause.json` and the new process continues until the original end.
   - ✅ Tests: each preset stops recording immediately and resumes at the right time, including across sleep/resume and app restart during a pause; extending and resuming early work; the pause is stored as a manual pause, not AFK; tray and window stay in sync.
 - **Autostart prompt on first launch (§5.9).** Ask once whether to start with the system; reuse the existing Settings autostart toggle; never ask again after an answer.
   - ✅ Tests: shown only on first launch with autostart off; "Yes" enables autostart via the existing startup backend and reports its errors; "No" persists; older settings files load without showing it again to existing users.

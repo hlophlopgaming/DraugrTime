@@ -326,3 +326,49 @@ fn onboarding_diagnostic_answers_the_new_prompt_before_waiting_for_day() {
     ui.answer_autostart(&path).unwrap();
     assert!(ui.diagnostic_action(Duration::from_secs(5)).is_none());
 }
+
+#[test]
+fn backup_settings_persist_and_restore_can_be_staged_and_cancelled() {
+    let (mut state, _) = State::boot();
+    state.fixture = true;
+    let dir = draugr_time_daemon::paths::data_dir().unwrap();
+    let _ = draugr_time_daemon::backup::cancel_restore(&dir);
+    let _ = state.update(Message::Settings(settings::Edit::Section("Data & import")));
+    let _ = state.update(Message::Backup(backups::Edit::Interval(
+        draugr_time_daemon::backup::Interval::Weekly,
+    )));
+    let _ = state.update(Message::Backup(backups::Edit::Keep(14)));
+    let loaded = draugr_time_daemon::backup::Settings::load(&dir).unwrap();
+    assert_eq!(
+        loaded.interval,
+        draugr_time_daemon::backup::Interval::Weekly
+    );
+    assert_eq!(loaded.keep, 14);
+
+    // Without recording there is no history to copy.
+    let _ = state.update(Message::Backup(backups::Edit::Now));
+    assert!(!state.backup_ui.busy);
+
+    let folder = draugr_time_daemon::backup::directory(&dir);
+    std::fs::create_dir_all(&folder).unwrap();
+    let path = folder.join("draugr-time-manual-2026-06-15_120000.sqlite");
+    let _ = std::fs::remove_file(&path);
+    draugr_time_core::Storage::open_in_memory()
+        .unwrap()
+        .backup_to(&path)
+        .unwrap();
+    let _ = state.update(Message::Backup(backups::Edit::Refresh));
+    assert!(state.backup_ui.list.iter().any(|b| b.path == path));
+    let _ = state.update(Message::Backup(backups::Edit::Restore(path.clone())));
+    // The first Cancel only closes the confirmation.
+    let _ = state.update(Message::Backup(backups::Edit::CancelRestore));
+    assert!(!draugr_time_daemon::backup::restore_pending(&dir));
+    let _ = state.update(Message::Backup(backups::Edit::Restore(path.clone())));
+    let _ = state.update(Message::Backup(backups::Edit::ConfirmRestore));
+    assert!(state.backup_ui.staged);
+    assert!(draugr_time_daemon::backup::restore_pending(&dir));
+    let _ = state.update(Message::Backup(backups::Edit::CancelRestore));
+    assert!(!state.backup_ui.staged);
+    assert!(!draugr_time_daemon::backup::restore_pending(&dir));
+    std::fs::remove_file(path).unwrap();
+}

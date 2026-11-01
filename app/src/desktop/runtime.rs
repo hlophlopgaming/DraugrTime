@@ -115,6 +115,12 @@ impl Runtime {
         listener.set_nonblocking(true).map_err(|e| e.to_string())?;
         std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
         let token = paths::token(&directory.join("api-token")).map_err(|e| e.to_string())?;
+        // A failed restore leaves history untouched; a postponed one stays staged
+        // and Settings → Data & import keeps showing it as waiting.
+        if let Err(error) = draugr_time_daemon::backup::apply_pending_restore(&directory, now_ms())
+        {
+            eprintln!("{error}");
+        }
         let shared = Shared::new(
             Storage::open(directory.join("activity.sqlite")).map_err(|e| e.to_string())?,
             token,
@@ -128,6 +134,9 @@ impl Runtime {
             .map_err(|e| e.to_string())?;
         shared.set_pause_file(directory.join("pause.json"));
         shared.restore_pause(now_ms())?;
+        if !fixture {
+            draugr_time_daemon::backup::spawn_scheduler(shared.clone(), directory.clone());
+        }
         #[cfg(target_os = "macos")]
         let computer = if fixture {
             None

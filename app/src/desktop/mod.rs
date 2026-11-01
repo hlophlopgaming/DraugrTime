@@ -1,5 +1,6 @@
 //! Native Draugr Time desktop.
 mod appearance;
+mod backups;
 mod components;
 mod day;
 mod design;
@@ -106,6 +107,7 @@ fn decode_icons(
 #[derive(Clone, Debug)]
 pub enum Message {
     Settings(settings::Edit),
+    Backup(backups::Edit),
     Edit(tagging::Edit),
     Rule(rules::Edit),
     Manage(management::Edit),
@@ -169,6 +171,7 @@ pub(super) enum AppIcon {
 }
 struct State {
     settings_ui: settings::Ui,
+    backup_ui: backups::Ui,
     report_ui: reports::Ui,
     rule_editor: rules::Editor,
     management: management::Ui,
@@ -293,6 +296,7 @@ impl State {
         };
         let mut state = Self {
             settings_ui: settings::Ui::load(),
+            backup_ui: backups::Ui::default(),
             report_ui: reports::Ui::default(),
             rule_editor: rules::Editor::default(),
             management: management::Ui::default(),
@@ -439,6 +443,12 @@ impl State {
         }
         if matches!(self.screen, "Tags" | "Rules") && !matches!(screen, "Tags" | "Rules") {
             self.release_management();
+        }
+        if screen == "Settings"
+            && self.screen != screen
+            && self.settings_ui.section == "Data & import"
+        {
+            let _ = self.edit_backup(backups::Edit::Refresh);
         }
         self.screen = screen;
     }
@@ -884,6 +894,7 @@ impl State {
                 }
             }
             Message::Settings(edit) => return self.edit_settings(edit),
+            Message::Backup(edit) => return self.edit_backup(edit),
             Message::Tick => {
                 if self.onboarding_test {
                     if let Some(edit) = self.settings_ui.diagnostic_action(self.clock.elapsed()) {

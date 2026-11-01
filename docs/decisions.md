@@ -1078,3 +1078,38 @@ history loads while unfocused. No polling timer or platform dependency is added.
 Explicit runtime/lifecycle diagnostics may load without focus: Xvfb CI has no
 window manager to focus their windows, and these modes must verify recording
 and close/reopen independently of desktop focus.
+
+## 2026-11-01 — Timed pauses survive restarts
+
+A timed pause stores only its end (`{"paused_until": ms}`) in `pause.json` in the
+data folder; it is removed on resume and on expiry. A new process continues an
+unexpired pause until the original end and never extends it. Pauses without a
+duration (localhost API/CLI only) are not stored, so a forgotten scripted pause
+cannot outlive a restart. A separate file, not `settings.json`, because settings
+reject unknown fields and older builds must keep loading them. The time the
+process was not running keeps its existing "tracker not running" meaning.
+
+## 2026-11-01 — Backups
+
+Backups are `VACUUM INTO` copies in `<data folder>/backups`, named
+`draugr-time-{manual|auto|before-restore}-YYYY-MM-DD_HHMMSS.sqlite` in local
+time. The storage lock is held only to flush buffered event ends; the copy runs
+from the file through a separate read-only connection, so recording continues.
+Each copy is written as `.partial`, checked (`quick_check`, schema version,
+required tables) and then renamed. Automatic backups default to daily, keeping 7;
+only automatic ones are pruned. Settings live in `backup.json` (same reason as
+`pause.json`). A background thread checks once a minute after a two-minute delay
+and stops at shutdown; it does not wake the UI.
+
+Restoring never swaps the open database. The chosen backup is checked and copied
+to `restore-pending.sqlite`; the next launch, before opening storage, checkpoints
+the current database, moves it to a `before-restore` backup and renames the
+staged file into place. A damaged staged file is discarded and history is left
+untouched. No schema change and no migration.
+
+## 2026-11-01 — Keyboard shortcuts are window-only
+
+New shortcuts (Ctrl/Cmd+1…5, P, N, F1/?) are handled with the existing ones and
+only when no widget captured the key and no editor is open. System-wide hotkeys
+are not registered: Wayland has no portable API for them, and a global P or N
+would intercept typing in other applications.
