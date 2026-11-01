@@ -13,6 +13,7 @@ mod settings;
 #[cfg(test)]
 mod settings_tests;
 mod setup;
+mod shortcuts;
 use design::{button, text_input};
 use localization::{message as localized, tr, LocaleProvider};
 mod memory;
@@ -122,6 +123,7 @@ pub enum Message {
     Screen(&'static str),
     Shift(i32),
     Today,
+    CloseShortcuts,
     Search(String),
     Tab(usize),
     Select(Option<Range>),
@@ -209,6 +211,7 @@ struct State {
     motion_visible: bool,
     highlight_from: Vec<(Option<String>, f32)>,
     rec_menu: bool,
+    shortcuts_open: bool,
     search_open: bool,
     block_focus: bool,
     tag_toast: Option<(Range, Instant)>,
@@ -339,6 +342,7 @@ impl State {
             motion_visible: false,
             highlight_from: Vec::new(),
             rec_menu: false,
+            shortcuts_open: false,
             search_open: false,
             block_focus: false,
             tag_toast: None,
@@ -1156,6 +1160,7 @@ impl State {
                     }
                 }
             }
+            Message::CloseShortcuts => self.shortcuts_open = false,
             Message::Today => {
                 self.change_date(Local::now().date_naive());
                 if self.screen == "Week" {
@@ -1484,6 +1489,19 @@ impl State {
                 if self.rec_menu && key == keyboard::Key::Named(Named::Escape) {
                     return self.update(Message::RecMenu);
                 }
+                if self.shortcuts_open {
+                    if matches!(key, keyboard::Key::Named(Named::Escape | Named::F1))
+                        || matches!(&key, keyboard::Key::Character(c) if c == "?")
+                    {
+                        self.shortcuts_open = false;
+                    }
+                    return Task::none();
+                }
+                if self.editor.is_none() && self.rail_focus.is_none() {
+                    if let Some(action) = shortcuts::action(&key, modifiers) {
+                        return self.shortcut(action);
+                    }
+                }
                 if self.screen == "Day"
                     && self.editor.is_none()
                     && self.rail_focus.is_none()
@@ -1775,6 +1793,18 @@ impl State {
                 ..Default::default()
             })
             .into();
+        }
+        if self.shortcuts_open {
+            let p = design::Palette::new(self.theme.palette().background.r < 0.5);
+            return container(self.shortcuts_dialog())
+                .padding(design::PADDING)
+                .center(Length::Fill)
+                .style(move |_| container::Style {
+                    background: Some(p.bg.into()),
+                    text_color: Some(p.text),
+                    ..Default::default()
+                })
+                .into();
         }
         let narrow = design::narrow(width);
         let navigation = design::navigation_metrics(localization::current());

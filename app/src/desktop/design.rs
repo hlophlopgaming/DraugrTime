@@ -483,6 +483,8 @@ pub const FIELD_VERTICAL: u16 = 9;
 pub const FIELD_HORIZONTAL: u16 = 10;
 
 pub const SETTINGS_DIALOG_WIDTH: f32 = 520.0;
+/// Key column in the keyboard shortcuts list.
+pub const SHORTCUT_KEY: f32 = 120.0;
 pub fn chip(
     theme: &iced::Theme,
     status: iced::widget::button::Status,

@@ -55,6 +55,11 @@ pub fn remember_pause(duration: Option<i64>) {
     }
 }
 
+/// Minutes of the last pause preset chosen; 15 until one is picked.
+pub fn last_pause() -> i64 {
+    LAST_PAUSE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 fn pause_label(minutes: i64) -> String {
     super::localized("{count} min", &[("count", minutes.to_string())])
 }

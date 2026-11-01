@@ -398,7 +398,19 @@
     "Tag last N minutes…": "Tag last N minutes…",
     "Last": "Last",
     "Minutes": "Minutes",
-    "min": "min"
+    "min": "min",
+    "Previous / next day": "Previous / next day",
+    "Zoom in / out": "Zoom in / out",
+    "Tag the selection": "Tag the selection",
+    "Clear the selection": "Clear the selection",
+    "Previous / next timeline block": "Previous / next timeline block",
+    "Search": "Search",
+    "Undo": "Undo",
+    "Day, Week, Tags, Rules, Settings": "Day, Week, Tags, Rules, Settings",
+    "Pause for the last chosen time / resume": "Pause for the last chosen time / resume",
+    "Move focus to the navigation rail": "Move focus to the navigation rail",
+    "Keyboard shortcuts": "Keyboard shortcuts",
+    "Shortcuts work when no text field is focused.": "Shortcuts work when no text field is focused."
   },
   "ru": {
     "Day": "День",
@@ -799,7 +811,19 @@
     "Tag last N minutes…": "Тег за последние N минут…",
     "Last": "Последние",
     "Minutes": "Минуты",
-    "min": "мин"
+    "min": "мин",
+    "Previous / next day": "Предыдущий / следующий день",
+    "Zoom in / out": "Приблизить / отдалить",
+    "Tag the selection": "Поставить тег на выделение",
+    "Clear the selection": "Снять выделение",
+    "Previous / next timeline block": "Предыдущий / следующий блок таймлайна",
+    "Search": "Поиск",
+    "Undo": "Отменить",
+    "Day, Week, Tags, Rules, Settings": "День, Неделя, Теги, Правила, Настройки",
+    "Pause for the last chosen time / resume": "Пауза на последнее выбранное время / продолжить",
+    "Move focus to the navigation rail": "Перейти к панели навигации",
+    "Keyboard shortcuts": "Горячие клавиши",
+    "Shortcuts work when no text field is focused.": "Клавиши работают, когда курсор не в текстовом поле."
   },
   "de": {
     "Day": "Tag",
@@ -1200,7 +1224,19 @@
     "Tag last N minutes…": "Letzte N Minuten taggen…",
     "Last": "Letzte",
     "Minutes": "Minuten",
-    "min": "Min."
+    "min": "Min.",
+    "Previous / next day": "Vorheriger / nächster Tag",
+    "Zoom in / out": "Vergrößern / verkleinern",
+    "Tag the selection": "Auswahl taggen",
+    "Clear the selection": "Auswahl aufheben",
+    "Previous / next timeline block": "Vorheriger / nächster Zeitleistenblock",
+    "Search": "Suchen",
+    "Undo": "Rückgängig",
+    "Day, Week, Tags, Rules, Settings": "Tag, Woche, Tags, Regeln, Einstellungen",
+    "Pause for the last chosen time / resume": "Für die zuletzt gewählte Zeit pausieren / fortsetzen",
+    "Move focus to the navigation rail": "Fokus auf die Navigationsleiste",
+    "Keyboard shortcuts": "Tastenkürzel",
+    "Shortcuts work when no text field is focused.": "Kürzel wirken, wenn kein Textfeld fokussiert ist."
   },
   "fr": {
     "Day": "Jour",
@@ -1601,7 +1637,19 @@
     "Tag last N minutes…": "Étiqueter les N dernières minutes…",
     "Last": "Dernières",
     "Minutes": "Minutes",
-    "min": "min"
+    "min": "min",
+    "Previous / next day": "Jour précédent / suivant",
+    "Zoom in / out": "Zoom avant / arrière",
+    "Tag the selection": "Étiqueter la sélection",
+    "Clear the selection": "Effacer la sélection",
+    "Previous / next timeline block": "Bloc précédent / suivant de la chronologie",
+    "Search": "Rechercher",
+    "Undo": "Annuler",
+    "Day, Week, Tags, Rules, Settings": "Jour, Semaine, Étiquettes, Règles, Réglages",
+    "Pause for the last chosen time / resume": "Pause pour la dernière durée choisie / reprendre",
+    "Move focus to the navigation rail": "Aller à la barre de navigation",
+    "Keyboard shortcuts": "Raccourcis clavier",
+    "Shortcuts work when no text field is focused.": "Les raccourcis fonctionnent quand aucun champ de texte n’a le focus."
   },
   "es": {
     "Day": "Día",
@@ -2002,7 +2050,19 @@
     "Tag last N minutes…": "Etiquetar los últimos N minutos…",
     "Last": "Últimos",
     "Minutes": "Minutos",
-    "min": "min"
+    "min": "min",
+    "Previous / next day": "Día anterior / siguiente",
+    "Zoom in / out": "Acercar / alejar",
+    "Tag the selection": "Etiquetar la selección",
+    "Clear the selection": "Quitar la selección",
+    "Previous / next timeline block": "Bloque anterior / siguiente de la línea de tiempo",
+    "Search": "Buscar",
+    "Undo": "Deshacer",
+    "Day, Week, Tags, Rules, Settings": "Día, Semana, Etiquetas, Reglas, Ajustes",
+    "Pause for the last chosen time / resume": "Pausar el último tiempo elegido / reanudar",
+    "Move focus to the navigation rail": "Ir a la barra de navegación",
+    "Keyboard shortcuts": "Atajos de teclado",
+    "Shortcuts work when no text field is focused.": "Los atajos funcionan cuando ningún campo de texto tiene el foco."
   },
   "pt": {
     "Day": "Dia",
@@ -2403,7 +2463,19 @@
     "Tag last N minutes…": "Marcar os últimos N minutos…",
     "Last": "Últimos",
     "Minutes": "Minutos",
-    "min": "min"
+    "min": "min",
+    "Previous / next day": "Dia anterior / seguinte",
+    "Zoom in / out": "Aproximar / afastar",
+    "Tag the selection": "Marcar a seleção",
+    "Clear the selection": "Limpar a seleção",
+    "Previous / next timeline block": "Bloco anterior / seguinte da linha do tempo",
+    "Search": "Pesquisar",
+    "Undo": "Desfazer",
+    "Day, Week, Tags, Rules, Settings": "Dia, Semana, Etiquetas, Regras, Configurações",
+    "Pause for the last chosen time / resume": "Pausar pelo último tempo escolhido / retomar",
+    "Move focus to the navigation rail": "Ir para a barra de navegação",
+    "Keyboard shortcuts": "Atalhos de teclado",
+    "Shortcuts work when no text field is focused.": "Os atalhos funcionam quando nenhum campo de texto está em foco."
   },
   "zh": {
     "Day": "日视图",
@@ -2804,7 +2876,19 @@
     "Tag last N minutes…": "标记最近 N 分钟…",
     "Last": "最近",
     "Minutes": "分钟",
-    "min": "分钟"
+    "min": "分钟",
+    "Previous / next day": "前一天 / 后一天",
+    "Zoom in / out": "放大 / 缩小",
+    "Tag the selection": "标记所选范围",
+    "Clear the selection": "清除选择",
+    "Previous / next timeline block": "上一个 / 下一个时间线块",
+    "Search": "搜索",
+    "Undo": "撤销",
+    "Day, Week, Tags, Rules, Settings": "日、周、标签、规则、设置",
+    "Pause for the last chosen time / resume": "按上次选择的时长暂停 / 继续",
+    "Move focus to the navigation rail": "将焦点移到导航栏",
+    "Keyboard shortcuts": "键盘快捷键",
+    "Shortcuts work when no text field is focused.": "未聚焦文本框时快捷键生效。"
   },
   "ja": {
     "Day": "日",
@@ -3205,6 +3289,18 @@
     "Tag last N minutes…": "直近 N 分にタグ付け…",
     "Last": "直近",
     "Minutes": "分数",
-    "min": "分"
+    "min": "分",
+    "Previous / next day": "前日 / 翌日",
+    "Zoom in / out": "拡大 / 縮小",
+    "Tag the selection": "選択範囲にタグ付け",
+    "Clear the selection": "選択を解除",
+    "Previous / next timeline block": "前 / 次のタイムラインブロック",
+    "Search": "検索",
+    "Undo": "元に戻す",
+    "Day, Week, Tags, Rules, Settings": "日、週、タグ、ルール、設定",
+    "Pause for the last chosen time / resume": "前回選んだ時間だけ一時停止 / 再開",
+    "Move focus to the navigation rail": "ナビゲーションバーへ移動",
+    "Keyboard shortcuts": "キーボードショートカット",
+    "Shortcuts work when no text field is focused.": "テキスト欄にフォーカスがないときに使えます。"
   }
 }
