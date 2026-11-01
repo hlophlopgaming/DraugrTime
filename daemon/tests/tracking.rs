@@ -219,3 +219,79 @@ fn rules_tag_observed_active_time_but_never_away_pause_or_gaps() {
         .all(|r| r.end_ts <= 2000 || r.start_ts >= 4000 && r.end_ts <= 5000 || r.start_ts >= 9000));
     assert_eq!(ranges.len(), 3, "continuous auto tags merge");
 }
+
+fn restarted(dir: &std::path::Path, now: i64) -> (Shared, bool) {
+    let shared = Shared::new(Storage::open_in_memory().unwrap(), "token".into(), 300);
+    shared.set_pause_file(dir.join("pause.json"));
+    let restored = shared.restore_pause(now).unwrap();
+    (shared, restored)
+}
+
+#[test]
+fn timed_pause_continues_after_restart_and_ends_at_the_original_time() {
+    let dir = tempfile::tempdir().unwrap();
+    let (first, _) = restarted(dir.path(), 0);
+    first.pause(10_000, Some(60_000)).unwrap();
+    drop(first);
+    let (second, restored) = restarted(dir.path(), 20_000);
+    assert!(restored);
+    let status = second.status();
+    assert_eq!(status.state, "paused");
+    assert_eq!(status.paused_until, Some(70_000));
+    let mut tracker = Tracker::new(second.clone());
+    let watcher = MockWatcher::new(Some(window("editor")), 0);
+    tracker.poll_once(30_000, &watcher, &watcher).unwrap();
+    assert_eq!(second.status().state, "paused");
+    let windows = |shared: &Shared| {
+        shared
+            .storage
+            .lock()
+            .unwrap()
+            .events(Some("window"), 0, 200_000)
+            .unwrap()
+    };
+    assert!(windows(&second).is_empty());
+    tracker.poll_once(70_000, &watcher, &watcher).unwrap();
+    assert_eq!(second.status().state, "tracking");
+    assert!(!dir.path().join("pause.json").exists());
+    let (third, restored) = restarted(dir.path(), 71_000);
+    assert!(!restored);
+    assert_ne!(third.status().state, "paused");
+}
+
+#[test]
+fn expired_resumed_and_untimed_pauses_do_not_survive_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let (shared, _) = restarted(dir.path(), 0);
+    shared.pause(0, Some(5_000)).unwrap();
+    let (later, restored) = restarted(dir.path(), 5_000);
+    assert!(!restored);
+    assert_eq!(later.status().paused_until, None);
+    assert!(!dir.path().join("pause.json").exists());
+
+    shared.pause(6_000, Some(60_000)).unwrap();
+    shared.resume();
+    assert!(!restarted(dir.path(), 7_000).1);
+
+    shared.pause(8_000, Some(60_000)).unwrap();
+    shared.pause(9_000, None).unwrap();
+    assert!(!restarted(dir.path(), 10_000).1);
+}
+
+#[test]
+fn extending_a_pause_moves_the_saved_end() {
+    let dir = tempfile::tempdir().unwrap();
+    let (shared, _) = restarted(dir.path(), 0);
+    shared.pause(0, Some(300_000)).unwrap();
+    shared.pause(1_000, Some(299_000 + 900_000)).unwrap();
+    let (later, restored) = restarted(dir.path(), 400_000);
+    assert!(restored);
+    assert_eq!(later.status().paused_until, Some(1_200_000));
+}
+
+#[test]
+fn unreadable_pause_file_keeps_recording() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("pause.json"), b"not json").unwrap();
+    assert!(!restarted(dir.path(), 0).1);
+}

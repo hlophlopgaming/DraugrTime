@@ -126,6 +126,8 @@ impl Runtime {
         shared
             .begin_recording(now_ms())
             .map_err(|e| e.to_string())?;
+        shared.set_pause_file(directory.join("pause.json"));
+        shared.restore_pause(now_ms())?;
         #[cfg(target_os = "macos")]
         let computer = if fixture {
             None

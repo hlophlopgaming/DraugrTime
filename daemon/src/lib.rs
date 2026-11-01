@@ -57,6 +57,9 @@ pub struct Shared {
     pub token: Arc<String>,
     pub idle_threshold: u64,
     pub preferences: Arc<Mutex<preferences::Preferences>>,
+    /// Where the end of a timed pause is kept so it survives a restart.
+    /// `None` (tests, fixtures) keeps the pause in memory only.
+    pause_file: Arc<Mutex<Option<std::path::PathBuf>>>,
     shutdown_signal: Arc<tokio::sync::Notify>,
 }
 
@@ -89,8 +92,61 @@ impl Shared {
             token: Arc::new(token),
             idle_threshold,
             preferences: Arc::new(Mutex::new(preferences::Preferences::default())),
+            pause_file: Arc::new(Mutex::new(None)),
             shutdown_signal: Arc::new(tokio::sync::Notify::new()),
         }
+    }
+    /// Keep timed pauses in `path` from now on. Call [`Shared::restore_pause`]
+    /// afterwards to continue a pause that was running when the process stopped.
+    pub fn set_pause_file(&self, path: std::path::PathBuf) {
+        *self.pause_file.lock().unwrap() = Some(path);
+    }
+    /// Continue a timed pause saved by an earlier process. An expired, missing
+    /// or unreadable pause file leaves recording on. Pauses without a duration
+    /// are never saved, so a forgotten scripted pause cannot outlive a restart.
+    pub fn restore_pause(&self, now: i64) -> Result<bool, String> {
+        let Some(until) = self.saved_pause() else {
+            return Ok(false);
+        };
+        if until <= now {
+            self.save_pause(None);
+            return Ok(false);
+        }
+        self.pause(now, Some((until - now).min(86_400_000)))?;
+        Ok(true)
+    }
+    fn saved_pause(&self) -> Option<i64> {
+        let path = self.pause_file.lock().unwrap().clone()?;
+        let bytes = std::fs::read(path).ok()?;
+        serde_json::from_slice::<serde_json::Value>(&bytes)
+            .ok()?
+            .get("paused_until")?
+            .as_i64()
+    }
+    fn save_pause(&self, until: Option<i64>) {
+        let Some(path) = self.pause_file.lock().unwrap().clone() else {
+            return;
+        };
+        // A failed write only loses the pause across a restart; recording state
+        // in memory stays correct, so the error is not surfaced to the caller.
+        let _ = match until {
+            None => match std::fs::remove_file(&path) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                other => other,
+            },
+            Some(until) => (|| {
+                let parent = path
+                    .parent()
+                    .ok_or_else(|| std::io::Error::other("no parent"))?;
+                let mut file = tempfile::NamedTempFile::new_in(parent)?;
+                std::io::Write::write_all(
+                    &mut file,
+                    json!({ "paused_until": until }).to_string().as_bytes(),
+                )?;
+                file.persist(&path).map_err(std::io::Error::other)?;
+                Ok(())
+            })(),
+        };
     }
     pub fn status(&self) -> Status {
         self.control.lock().unwrap().status.clone()
@@ -125,6 +181,10 @@ impl Shared {
         control.status.idle_seconds = None;
         control.status.state = "paused".into();
         control.status.paused_until = duration_ms.map(|duration| now.saturating_add(duration));
+        let until = control.status.paused_until;
+        drop(storage);
+        drop(control);
+        self.save_pause(until);
         Ok(())
     }
     pub fn shutdown(&self) -> Result<(), StorageError> {
@@ -146,6 +206,8 @@ impl Shared {
         control.paused = false;
         control.status.paused_until = None;
         control.status.state = "starting".into();
+        drop(control);
+        self.save_pause(None);
     }
 }
 
@@ -205,6 +267,7 @@ impl Tracker {
             control.status.paused_until = None;
             control.status.computer.recording = "recording".into();
             control.pause_generation = control.pause_generation.wrapping_add(1);
+            self.shared.save_pause(None);
         }
         let generation = control.pause_generation;
         if generation != self.pause_generation {

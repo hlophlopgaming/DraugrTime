@@ -29,6 +29,8 @@ pub fn serve(idle_threshold: u64) -> Result<(), Box<dyn Error>> {
     let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, paths::PORT))?;
     listener.set_nonblocking(true)?;
     shared.begin_recording(now_ms())?;
+    shared.set_pause_file(directory.join("pause.json"));
+    shared.restore_pause(now_ms())?;
     let computer = start_computer(&shared);
     let server = spawn_api(shared.clone(), listener);
     let mut tracker = Tracker::new(shared.clone());
