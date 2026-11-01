@@ -5,7 +5,7 @@
 
 #define MyAppName "Draugr Time"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.2.1"
+  #define MyAppVersion "1.3.0"
 #endif
 #define MyAppPublisher "hlophlopgaming"
 #define MyAppExeName "draugr-time.exe"
