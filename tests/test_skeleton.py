@@ -30,7 +30,7 @@ class SkeletonTests(unittest.TestCase):
 
     def test_ci_checks_and_builds_on_three_platforms(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text()
-        for required in ("ubuntu-22.04", "windows-latest", "macos-latest",
+        for required in ("ubuntu-22.04", "windows-latest", "macos-15",
                          "cargo fmt --check", "cargo clippy --all-targets -- -D warnings",
                          "cargo test", "cargo build --package draugr-time --release"):
             self.assertIn(required, workflow)
