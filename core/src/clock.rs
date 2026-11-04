@@ -29,14 +29,7 @@ impl Storage {
             .prefix("clock-rollback-")
             .suffix(".sqlite")
             .tempfile_in(directory)?;
-        self.connection.execute(
-            "VACUUM main INTO ?1",
-            [backup.path().to_str().ok_or_else(|| {
-                StorageError::InvalidRecord(
-                    "Clock recovery backup path is not valid Unicode".into(),
-                )
-            })?],
-        )?;
+        self.backup_to(backup.path())?;
         backup.as_file().sync_all()?;
         let (_, path) = backup.keep().map_err(|error| error.error)?;
         #[cfg(unix)]

@@ -68,11 +68,12 @@ pub(crate) fn continuation_gap(
     }
 }
 pub(crate) fn begin(
+    shared: &Shared,
     storage: &mut Storage,
     control: &mut Control,
     now: i64,
 ) -> Result<(), StorageError> {
-    recover_clock(storage, control, now)?;
+    recover_clock(shared, storage, control, now)?;
     if control.session_active {
         return Ok(());
     }
@@ -104,6 +105,7 @@ pub(crate) fn begin(
     Ok(())
 }
 fn recover_clock(
+    shared: &Shared,
     storage: &mut Storage,
     control: &mut Control,
     now: i64,
@@ -124,14 +126,19 @@ fn recover_clock(
             control.status.idle_seconds = None;
             control.pause_generation = control.pause_generation.wrapping_add(1);
             control.pause_started = now;
-            if let Some(until) = &mut control.status.paused_until {
-                *until = now.saturating_add(until.saturating_sub(previous).max(0));
+            if let Some(until) = control.status.paused_until.or_else(|| shared.saved_pause()) {
+                let corrected = now.saturating_add(until.saturating_sub(previous).max(0));
+                if control.status.paused_until.is_some() {
+                    control.status.paused_until = Some(corrected);
+                }
+                shared.save_pause(Some(corrected));
             }
         }
     }
     Ok(())
 }
 pub(crate) fn stop(
+    shared: &Shared,
     storage: &mut Storage,
     control: &mut Control,
     now: i64,
@@ -139,7 +146,7 @@ pub(crate) fn stop(
     if !control.session_active {
         return Ok(());
     }
-    recover_clock(storage, control, now)?;
+    recover_clock(shared, storage, control, now)?;
     close_observed(storage, &control.status.computer, now)?;
     let state = ComputerState {
         machine: "unknown".into(),
@@ -166,11 +173,11 @@ pub(crate) fn unknown_gap(storage: &mut Storage, from: i64, to: i64) -> Result<(
 impl Shared {
     pub fn stop_recording(&self, now: i64) -> Result<(), StorageError> {
         let mut control = self.control.lock().unwrap();
-        stop(&mut self.storage.lock().unwrap(), &mut control, now)
+        stop(self, &mut self.storage.lock().unwrap(), &mut control, now)
     }
     pub fn begin_recording(&self, now: i64) -> Result<(), StorageError> {
         let mut control = self.control.lock().unwrap();
-        begin(&mut self.storage.lock().unwrap(), &mut control, now)
+        begin(self, &mut self.storage.lock().unwrap(), &mut control, now)
     }
     pub fn lifecycle(&self, event: LifecycleEvent) -> Result<(), StorageError> {
         let mut control = self.control.lock().unwrap();
@@ -179,7 +186,7 @@ impl Shared {
         }
         let mut storage = self.storage.lock().unwrap();
         if !control.session_active {
-            begin(&mut storage, &mut control, event.ts)?;
+            begin(self, &mut storage, &mut control, event.ts)?;
         }
         let ts = storage
             .last_event("computer")?

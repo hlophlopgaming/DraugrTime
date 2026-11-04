@@ -404,3 +404,31 @@ fn restart_recovers_legacy_history_without_computer_events() {
     assert_eq!(shared.status().state, "tracking");
     assert!(shared.status().clock_recovery_backup.is_some());
 }
+
+#[test]
+fn corrected_pause_deadline_survives_another_restart() {
+    for restart_before_correction in [false, true] {
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("activity.sqlite");
+        let pause = folder.path().join("pause.json");
+        let shared = Shared::new(Storage::open(&path).unwrap(), "test".into(), 300);
+        shared.set_pause_file(pause.clone());
+        let mut tracker = Tracker::new(shared.clone());
+        let watcher = MockWatcher::new(Some(window("editor")), 0);
+        tracker.poll_once(10_000, &watcher, &watcher).unwrap();
+        shared.pause(11_000, Some(5000)).unwrap();
+        if restart_before_correction {
+            let next = Shared::new(Storage::open(&path).unwrap(), "test".into(), 300);
+            next.set_pause_file(pause.clone());
+            next.begin_recording(1000).unwrap();
+            assert!(next.restore_pause(1000).unwrap());
+            assert_eq!(next.status().paused_until, Some(6000));
+        } else {
+            tracker.poll_once(1000, &watcher, &watcher).unwrap();
+        }
+        let next = Shared::new(Storage::open(&path).unwrap(), "test".into(), 300);
+        next.set_pause_file(pause);
+        assert!(next.restore_pause(2000).unwrap());
+        assert_eq!(next.status().paused_until, Some(6000));
+    }
+}

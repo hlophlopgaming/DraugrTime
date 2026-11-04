@@ -1121,7 +1121,7 @@ its clock back by three hours. Keep core heartbeat validation and nonoverlapping
 bucket intervals: accepting out-of-order heartbeats would corrupt report and
 indexed-query assumptions. For backwards jumps of at least one sampling gap
 (3 seconds), save a complete SQLite snapshot beside the active database using
-`VACUUM INTO`, including flushed live tails, before removing future native
+the existing verified `backup_to` operation, including flushed live tails, before removing future native
 samples and clipping intervals crossing the corrected time. Do not guess corrected
 timestamps or change manual tags, rules, imported web events, or the system clock.
 The private, uniquely named backup is synced before the history transaction;
@@ -1130,7 +1130,8 @@ Backups retain the original history even after later privacy deletions and must
 be removed separately when no longer needed; they are not automatically expired.
 
 Apply recovery on sampling, recording startup, pause and stop; preserve a timed
-pause's remaining duration and force an incremental history reload. Delayed OS
+pause's remaining duration in memory and in `pause.json` (also before restoring
+a saved pause at startup), and force an incremental history reload. Delayed OS
 notifications remain clamped rather than triggering recovery on their own.
 Sub-3-second backwards differences retain existing strict validation and recover
 as the clock catches up, avoiding destructive recovery for scheduling races.

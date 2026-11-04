@@ -160,7 +160,7 @@ impl Shared {
         }
         let mut control = self.control.lock().unwrap();
         let mut storage = self.storage.lock().unwrap();
-        computer::begin(&mut storage, &mut control, now).map_err(|e| e.to_string())?;
+        computer::begin(self, &mut storage, &mut control, now).map_err(|e| e.to_string())?;
         computer::close_observed(&mut storage, &control.status.computer, now)
             .map_err(|e| e.to_string())?;
         control.status.computer.recording = "paused".into();
@@ -194,7 +194,12 @@ impl Shared {
         // Stop polling before flushing; use the same lock order as Tracker.
         let mut control = self.control.lock().unwrap();
         control.shutdown = true;
-        let result = computer::stop(&mut self.storage.lock().unwrap(), &mut control, now_ms());
+        let result = computer::stop(
+            self,
+            &mut self.storage.lock().unwrap(),
+            &mut control,
+            now_ms(),
+        );
         self.shutdown_signal.notify_one();
         result
     }
@@ -258,7 +263,7 @@ impl Tracker {
         }
         {
             let mut storage = self.shared.storage.lock().unwrap();
-            computer::begin(&mut storage, &mut control, now)?;
+            computer::begin(&self.shared, &mut storage, &mut control, now)?;
         }
         let expired = control.paused
             && control
