@@ -129,10 +129,10 @@ impl Runtime {
         *shared.preferences.lock().unwrap() =
             draugr_time_daemon::preferences::Preferences::load(&directory.join("settings.json"))
                 .map_err(|e| e.to_string())?;
+        shared.set_pause_file(directory.join("pause.json"));
         shared
             .begin_recording(now_ms())
             .map_err(|e| e.to_string())?;
-        shared.set_pause_file(directory.join("pause.json"));
         shared.restore_pause(now_ms())?;
         if !fixture {
             draugr_time_daemon::backup::spawn_scheduler(shared.clone(), directory.clone());

@@ -101,6 +101,7 @@ impl Shared {
     }
     /// Keep timed pauses in `path` from now on. Call [`Shared::restore_pause`]
     /// afterwards to continue a pause that was running when the process stopped.
+    /// Set this before starting recording so clock recovery can correct the saved end.
     pub fn set_pause_file(&self, path: std::path::PathBuf) {
         *self.pause_file.lock().unwrap() = Some(path);
     }

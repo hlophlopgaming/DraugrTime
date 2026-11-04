@@ -31,8 +31,8 @@ pub fn serve(idle_threshold: u64) -> Result<(), Box<dyn Error>> {
         crate::preferences::Preferences::load(&directory.join("settings.json"))?;
     let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, paths::PORT))?;
     listener.set_nonblocking(true)?;
-    shared.begin_recording(now_ms())?;
     shared.set_pause_file(directory.join("pause.json"));
+    shared.begin_recording(now_ms())?;
     shared.restore_pause(now_ms())?;
     crate::backup::spawn_scheduler(shared.clone(), directory.clone());
     let computer = start_computer(&shared);
