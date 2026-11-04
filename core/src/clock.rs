@@ -91,7 +91,10 @@ mod tests {
         let previous = storage.metadata_version().unwrap();
         assert!(storage.recover_clock_rollback(-1).is_err());
         let backup = storage.recover_clock_rollback(1500).unwrap().unwrap();
-        assert_eq!(backup.parent(), path.parent());
+        assert_eq!(
+            backup.parent().unwrap().canonicalize().unwrap(),
+            path.parent().unwrap().canonicalize().unwrap()
+        );
         let saved = Storage::open(&backup).unwrap();
         for bucket in ["computer", "window", "afk"] {
             let events = storage.events(Some(bucket), 0, 20_000).unwrap();
