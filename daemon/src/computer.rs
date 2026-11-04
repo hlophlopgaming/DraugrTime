@@ -72,6 +72,7 @@ pub(crate) fn begin(
     control: &mut Control,
     now: i64,
 ) -> Result<(), StorageError> {
+    recover_clock(storage, control, now)?;
     if control.session_active {
         return Ok(());
     }
@@ -102,6 +103,34 @@ pub(crate) fn begin(
     control.status.computer = ComputerState::default();
     Ok(())
 }
+fn recover_clock(
+    storage: &mut Storage,
+    control: &mut Control,
+    now: i64,
+) -> Result<(), StorageError> {
+    // Sub-poll differences can be delayed notifications rather than a clock reset.
+    let mut previous = storage.last_event("computer")?.map(|event| event.end_ts);
+    if !control.session_active {
+        for bucket in ["window", "afk"] {
+            previous = previous.max(storage.last_event(bucket)?.map(|event| event.end_ts));
+        }
+    }
+    if let Some(previous) = previous.filter(|previous| previous.saturating_sub(now) >= 3000) {
+        if let Some(path) = storage.recover_clock_rollback(now)? {
+            control.status.clock_recovery_backup = Some(path);
+            control.status.error = None;
+            control.status.updated_ts = now;
+            control.status.current_window = None;
+            control.status.idle_seconds = None;
+            control.pause_generation = control.pause_generation.wrapping_add(1);
+            control.pause_started = now;
+            if let Some(until) = &mut control.status.paused_until {
+                *until = now.saturating_add(until.saturating_sub(previous).max(0));
+            }
+        }
+    }
+    Ok(())
+}
 pub(crate) fn stop(
     storage: &mut Storage,
     control: &mut Control,
@@ -110,6 +139,7 @@ pub(crate) fn stop(
     if !control.session_active {
         return Ok(());
     }
+    recover_clock(storage, control, now)?;
     close_observed(storage, &control.status.computer, now)?;
     let state = ComputerState {
         machine: "unknown".into(),
@@ -148,7 +178,9 @@ impl Shared {
             return Ok(());
         }
         let mut storage = self.storage.lock().unwrap();
-        begin(&mut storage, &mut control, event.ts)?;
+        if !control.session_active {
+            begin(&mut storage, &mut control, event.ts)?;
+        }
         let ts = storage
             .last_event("computer")?
             .map_or(event.ts, |e| event.ts.max(e.end_ts));

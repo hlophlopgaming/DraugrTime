@@ -2108,9 +2108,14 @@ impl State {
         } else if self.status.state == "error" {
             let error = self
                 .status
-                .backends
-                .iter()
-                .find_map(|backend| backend.error.as_deref())
+                .error
+                .as_deref()
+                .or_else(|| {
+                    self.status
+                        .backends
+                        .iter()
+                        .find_map(|backend| backend.error.as_deref())
+                })
                 .unwrap_or("Tracking needs attention; check Settings.");
             main = main.push(
                 button(text(localization::error(error)).size(design::META))

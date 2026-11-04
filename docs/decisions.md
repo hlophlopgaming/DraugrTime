@@ -1113,3 +1113,27 @@ New shortcuts (Ctrl/Cmd+1…5, P, N, F1/?) are handled with the existing ones an
 only when no widget captured the key and no editor is open. System-wide hotkeys
 are not registered: Wayland has no portable API for them, and a global P or N
 would intercept typing in other applications.
+
+## 2026-11-04 — Recover from a backwards system clock without losing the original history
+
+A dual-boot machine started tracking before network time synchronization moved
+its clock back by three hours. Keep core heartbeat validation and nonoverlapping
+bucket intervals: accepting out-of-order heartbeats would corrupt report and
+indexed-query assumptions. For backwards jumps of at least one sampling gap
+(3 seconds), save a complete SQLite snapshot beside the active database using
+`VACUUM INTO`, including flushed live tails, before removing future native
+samples and clipping intervals crossing the corrected time. Do not guess corrected
+timestamps or change manual tags, rules, imported web events, or the system clock.
+The private, uniquely named backup is synced before the history transaction;
+backup failure or concurrent external history changes leave live history intact.
+Backups retain the original history even after later privacy deletions and must
+be removed separately when no longer needed; they are not automatically expired.
+
+Apply recovery on sampling, recording startup, pause and stop; preserve a timed
+pause's remaining duration and force an incremental history reload. Delayed OS
+notifications remain clamped rather than triggering recovery on their own.
+Sub-3-second backwards differences retain existing strict validation and recover
+as the clock catches up, avoiding destructive recovery for scheduling races.
+Settings exposes both general tracker errors and the backup location; the latter
+is retained in live status for this process, while the backup file persists across
+restarts. A failed recovery remains a visible error and can be retried.

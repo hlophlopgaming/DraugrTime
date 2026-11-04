@@ -17,6 +17,8 @@ pub struct Event {
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
+    #[error("clock recovery backup failed: {0}")]
+    ClockRecoveryBackup(#[from] std::io::Error),
     #[error(transparent)]
     Sqlite(#[from] rusqlite::Error),
     #[error(transparent)]
@@ -229,6 +231,7 @@ mod tests;
 mod crud_tests;
 
 mod backup;
+mod clock;
 mod records;
 pub use backup::{backup_file, verify_backup};
 pub use records::{Collection, Tag, TagRange};

@@ -578,6 +578,22 @@ impl State {
                     .push(self.backups_view());
             }
             "Status & permissions" => {
+                if let Some(path) = &self.status.clock_recovery_backup {
+                    body = body.push(
+                        text(localized(
+                            "The system clock moved backwards. Previous history was backed up to {path}; recording can continue at the corrected time.",
+                            &[("path", path.display().to_string())],
+                        ))
+                        .size(design::META),
+                    );
+                }
+                if let Some(error) = &self.status.error {
+                    body = body.push(
+                        text(localization::error(error))
+                            .size(design::META)
+                            .color(p.danger_text),
+                    );
+                }
                 if self.runtime.is_some() {
                     let computer = &self.status.computer;
                     body = body.push(

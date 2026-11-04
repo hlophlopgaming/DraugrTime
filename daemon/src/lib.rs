@@ -30,6 +30,7 @@ pub struct BackendStatus {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct Status {
+    pub clock_recovery_backup: Option<std::path::PathBuf>,
     pub computer: ComputerState,
     pub computer_capabilities: String,
     pub state: String,
@@ -72,6 +73,7 @@ impl Shared {
             control: Arc::new(Mutex::new(Control {
                 session_active: false,
                 status: Status {
+                    clock_recovery_backup: None,
                     computer: ComputerState::default(),
                     computer_capabilities:
                         "Lifecycle backend not initialized; off/history reconstruction unavailable"
@@ -313,6 +315,7 @@ impl Tracker {
             )?;
             batch.commit()?;
             computer::update_status(&mut control.status);
+            control.status.error = None;
             self.last_tick = None;
             self.had_window = false;
             self.had_idle = false;

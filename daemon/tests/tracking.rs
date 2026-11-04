@@ -295,3 +295,112 @@ fn unreadable_pause_file_keeps_recording() {
     std::fs::write(dir.path().join("pause.json"), b"not json").unwrap();
     assert!(!restarted(dir.path(), 0).1);
 }
+
+#[test]
+fn tracking_recovers_when_wall_clock_moves_backwards() {
+    for restart in [false, true] {
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("activity.sqlite");
+        let shared = Shared::new(Storage::open(&path).unwrap(), "test-token".into(), 300);
+        let mut tracker = Tracker::new(shared.clone());
+        let watcher = MockWatcher::new(Some(window("editor")), 0);
+        for ts in [10_801_000, 10_802_000] {
+            tracker.poll_once(ts, &watcher, &watcher).unwrap();
+        }
+        let shared = if restart {
+            shared.storage.lock().unwrap().flush().unwrap();
+            Shared::new(Storage::open(&path).unwrap(), "test-token".into(), 300)
+        } else {
+            shared
+        };
+        let mut tracker = Tracker::new(shared.clone());
+        for ts in [2_000, 3_000] {
+            tracker.poll_once(ts, &watcher, &watcher).unwrap();
+        }
+        assert_eq!(shared.status().state, "tracking");
+        assert_eq!(shared.status().updated_ts, 3_000);
+        assert!(shared.status().error.is_none());
+        let backup = shared.status().clock_recovery_backup.unwrap();
+        let saved = Storage::open(&backup).unwrap();
+        assert_eq!(
+            saved.last_event("window").unwrap().unwrap().end_ts,
+            10_802_000
+        );
+        let storage = shared.storage.lock().unwrap();
+        for bucket in ["computer", "window", "afk"] {
+            let events = storage.events(Some(bucket), 0, 20_000_000).unwrap();
+            assert!(events.iter().all(|event| event.end_ts <= 3000));
+            assert_eq!(storage.last_event(bucket).unwrap().unwrap().end_ts, 3000);
+        }
+    }
+}
+
+#[test]
+fn clock_rollback_preserves_pause_duration_and_clears_stale_error() {
+    let folder = tempfile::tempdir().unwrap();
+    let shared = Shared::new(
+        Storage::open(folder.path().join("activity.sqlite")).unwrap(),
+        "test".into(),
+        300,
+    );
+    let mut tracker = Tracker::new(shared.clone());
+    let watcher = MockWatcher::new(Some(window("editor")), 0);
+    tracker.poll_once(10_000, &watcher, &watcher).unwrap();
+    shared.pause(11_000, Some(5000)).unwrap();
+    shared.control.lock().unwrap().status.error = Some("previous failure".into());
+    tracker.poll_once(1000, &watcher, &watcher).unwrap();
+    assert_eq!(shared.status().state, "paused");
+    assert_eq!(shared.status().paused_until, Some(6000));
+    assert!(shared.status().error.is_none());
+    tracker.poll_once(6000, &watcher, &watcher).unwrap();
+    assert_eq!(shared.status().state, "tracking");
+    assert!(shared.status().paused_until.is_none());
+}
+
+#[test]
+fn pause_and_stop_recover_before_the_next_sampling_tick() {
+    for stop in [false, true] {
+        let folder = tempfile::tempdir().unwrap();
+        let shared = Shared::new(
+            Storage::open(folder.path().join("activity.sqlite")).unwrap(),
+            "test".into(),
+            300,
+        );
+        let mut tracker = Tracker::new(shared.clone());
+        let watcher = MockWatcher::new(Some(window("editor")), 0);
+        tracker.poll_once(10_000, &watcher, &watcher).unwrap();
+        if stop {
+            shared.stop_recording(1000).unwrap();
+            shared.begin_recording(2000).unwrap();
+        } else {
+            shared.pause(1000, None).unwrap();
+            shared.resume();
+        }
+        tracker.poll_once(2000, &watcher, &watcher).unwrap();
+        tracker.poll_once(3000, &watcher, &watcher).unwrap();
+        assert_eq!(shared.status().state, "tracking");
+        assert!(shared.status().clock_recovery_backup.is_some());
+    }
+}
+
+#[test]
+fn restart_recovers_legacy_history_without_computer_events() {
+    let folder = tempfile::tempdir().unwrap();
+    let mut storage = Storage::open(folder.path().join("activity.sqlite")).unwrap();
+    storage
+        .record_interval(
+            "afk",
+            &serde_json::json!({"status":"active"}),
+            10_000,
+            11_000,
+        )
+        .unwrap();
+    let shared = Shared::new(storage, "test".into(), 300);
+    shared.begin_recording(1000).unwrap();
+    let mut tracker = Tracker::new(shared.clone());
+    let watcher = MockWatcher::new(Some(window("editor")), 0);
+    tracker.poll_once(1000, &watcher, &watcher).unwrap();
+    tracker.poll_once(2000, &watcher, &watcher).unwrap();
+    assert_eq!(shared.status().state, "tracking");
+    assert!(shared.status().clock_recovery_backup.is_some());
+}

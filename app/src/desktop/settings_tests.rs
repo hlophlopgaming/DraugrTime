@@ -170,6 +170,13 @@ fn render_settings_review_screenshots() {
         "messenger; /opt/local-chat",
     );
     for section in settings::SECTIONS.into_iter().chain(["Autostart"]) {
+        state.status.error = (section == "Status & permissions")
+            .then(|| "heartbeat timestamp precedes the last event in its bucket".into());
+        state.status.clock_recovery_backup = (section == "Status & permissions").then(|| {
+            std::path::PathBuf::from(
+                "/home/example/.local/share/DraugrTime/clock-rollback-example.sqlite",
+            )
+        });
         state.fixture = section != "Autostart";
         state.autostart_enabled = false;
         state.settings_ui.preferences.autostart_prompt_pending = section == "Autostart";

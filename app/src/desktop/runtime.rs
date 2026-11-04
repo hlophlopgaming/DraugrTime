@@ -193,11 +193,8 @@ impl Runtime {
             .map(|(start, end)| Range::new(start, end));
         let version = storage.metadata_version().map_err(|e| e.to_string())?;
         let tags_changed = cursor.metadata_version != Some(version);
-        // An external writer may have edited history rather than appended a heartbeat.
-        if cursor
-            .metadata_version
-            .is_some_and(|old| old.1 != version.1)
-        {
+        // History edits (including clock recovery) can replace already-loaded samples.
+        if cursor.metadata_version.is_some_and(|old| old != version) {
             cursor.starts.clear();
         }
         let mut events = Vec::new();
@@ -495,6 +492,36 @@ mod incremental_tests {
     use super::*;
     use draugr_time_core::Collection;
     use serde_json::json;
+
+    #[test]
+    fn clock_recovery_reloads_history_before_the_old_cursor() {
+        let folder = tempfile::tempdir().unwrap();
+        let shared = Shared::new(
+            Storage::open(folder.path().join("activity.sqlite")).unwrap(),
+            "test".into(),
+            300,
+        );
+        let day = Range::new(0, 100_000);
+        {
+            let mut storage = shared.storage.lock().unwrap();
+            storage
+                .record_interval("window", &json!({"app":"old"}), 10_000, 11_000)
+                .unwrap();
+        }
+        let first = Runtime::load(shared.clone(), day, LoadCursor::default()).unwrap();
+        assert_eq!(first.cursor.starts["window"], 10_000);
+        {
+            let mut storage = shared.storage.lock().unwrap();
+            storage.recover_clock_rollback(1000).unwrap().unwrap();
+            storage
+                .record_interval("window", &json!({"app":"new"}), 1000, 2000)
+                .unwrap();
+        }
+        let next = Runtime::load(shared, day, *first.cursor).unwrap();
+        assert_eq!(next.replace_from["window"], 0);
+        assert_eq!(next.tracks[2].segments.len(), 1);
+        assert_eq!(next.tracks[2].segments[0].range, Range::new(1000, 2000));
+    }
 
     #[test]
     fn incremental_load_replaces_tail_and_refreshes_tag_revision() {
