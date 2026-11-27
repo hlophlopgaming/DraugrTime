@@ -76,6 +76,9 @@ impl Editor {
 }
 impl State {
     pub fn edit_rule(&mut self, event: Edit) {
+        if self.guard_rule(&event) {
+            return;
+        }
         let Some(runtime) = &self.runtime else {
             self.error = tr("Start recording to edit rules");
             return;

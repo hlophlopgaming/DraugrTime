@@ -13,7 +13,7 @@ const SHORTCUTS: [(&str, &str); 13] = [
     ("T", "Today"),
     ("+ / −", "Zoom in / out"),
     ("Enter", "Tag the selection"),
-    ("Esc", "Clear the selection"),
+    ("Esc", "Clear filter / selection"),
     ("Alt+↑ / ↓", "Previous / next timeline block"),
     ("Ctrl+F", "Search"),
     ("Ctrl+Z", "Undo"),

@@ -196,9 +196,14 @@ impl State {
         }
         date_nav = date_nav
             .push(
-                text(localization::short_date_label(self.date))
-                    .font(design::SEMIBOLD)
-                    .size(design::BODY),
+                button(
+                    text(localization::short_date_label(self.date))
+                        .font(design::SEMIBOLD)
+                        .size(design::BODY),
+                )
+                .on_press(Message::Qol(qol::Edit::OpenDate))
+                .style(design::ghost)
+                .padding(0),
             )
             .push(
                 button(text("›"))
@@ -753,6 +758,28 @@ impl State {
                     .style(design::ghost),
             );
         }
+        let mut filter =
+            row![
+                text_input(&tr("Filter apps and window titles"), &self.summary_search)
+                    .on_input(Message::SummaryFilter)
+                    .id("day-filter")
+                    .size(design::META)
+                    .padding(design::RAIL_PADDING)
+                    .width(Length::Fill)
+            ]
+            .spacing(design::SMALL_GAP)
+            .align_y(Alignment::Center);
+        if !self.summary_search.is_empty() {
+            filter = filter.push(tooltip(
+                button(text("×"))
+                    .on_press(Message::Qol(qol::Edit::ClearSearch))
+                    .style(design::ghost)
+                    .width(design::DENSE_TARGET)
+                    .padding(0),
+                text(tr("Clear")),
+                tooltip::Position::Bottom,
+            ));
+        }
         column![
             row![
                 text(tr("Whole day"))
@@ -774,11 +801,7 @@ impl State {
             ))
             .padding(design::SEGMENT_PADDING)
             .style(design::segment_track),
-            text_input(&tr("Filter apps and window titles"), &self.summary_search)
-                .on_input(Message::SummaryFilter)
-                .id("day-filter")
-                .size(design::META)
-                .padding(design::RAIL_PADDING),
+            filter,
             row![
                 text(tr(["Tags", "Application", "Documents"][self.tab]).to_uppercase())
                     .size(design::CAPTION)
@@ -856,8 +879,8 @@ impl canvas::Program<Message> for Hourly<'_> {
         let p = design::Palette::new(theme.palette().background.r < 0.5);
         let geometry = self.cache.draw(renderer, bounds.size(), |f| {
             let width = bounds.width / 24.0;
-            for hour in 0..24 {
-                let bin = self.bins[hour];
+            let step = timeline::hour_label_step(bounds.width, 24.0);
+            for (hour, bin) in self.bins.iter().enumerate() {
                 let capacity = bin[2].max(1) as f32;
                 let active = bin[0] as f32 / capacity;
                 let away = bin[1] as f32 / capacity;
@@ -881,14 +904,16 @@ impl canvas::Program<Message> for Hourly<'_> {
                     ),
                     p,
                 );
-                f.fill_text(canvas::Text {
-                    content: format!("{hour:02}"),
-                    position: iced::Point::new(x, height + 4.0),
-                    color: if hour % 3 == 0 { p.text2 } else { p.text3 },
-                    font: design::MONO,
-                    size: 10.0.into(),
-                    ..Default::default()
-                });
+                if hour % step == 0 {
+                    f.fill_text(canvas::Text {
+                        content: format!("{hour:02}"),
+                        position: iced::Point::new(x, height + 4.0),
+                        color: if hour % 3 == 0 { p.text2 } else { p.text3 },
+                        font: design::MONO,
+                        size: 10.0.into(),
+                        ..Default::default()
+                    });
+                }
             }
         });
         vec![geometry]

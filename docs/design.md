@@ -6,9 +6,8 @@ Implement it in Iced with the existing tiny-skia renderer; do not add a web view
 
 ## Reference
 
-- Interactive mockups: the "Draugr Time — app design" canvas
-  (<https://claude.ai/artifact/XZNceaHNMSHpaJGMZcqNDP>; private until the owner
-  shares it). Page **Dark** and page **Light** hold the same screens:
+- Exported mockups of the "Draugr Time — app design" canvas are in
+  `docs/design/`. **Dark** and **Light** hold the same screens:
   Day, Week, Tags, Rules, Settings, plus the tray right-click menu and the
   first-launch autostart dialog (dark only; derive light from the tokens below).
 - Exported PNGs of each artboard go to `docs/design/` (`day-dark.png`,
@@ -47,8 +46,11 @@ Implement it in Iced with the existing tiny-skia renderer; do not add a web view
 - **Right panel**, 344 px (300–380), side background, left 1 px border.
   Day: "Whole day"; Week: "This week"; Tags: selected tag; Rules: rule editor.
   Settings has a 220 px section list instead.
-- Below 760 px wide: rail becomes a top bar, the right panel moves under the
-  main column, wide tables scroll horizontally.
+- Use the stacked layout whenever the measured rail, right panel and main
+  padding would leave less than 600 px for the main content. The rail becomes a
+  top bar and the right panel moves below the main column; wide tables scroll
+  horizontally. The former fixed 760 px breakpoint squeezed the timeline at
+  intermediate widths (760–900 px).
 
 ## Components
 
@@ -106,6 +108,8 @@ relocate these controls instead of restyling them:
   segmented control (Full day / Active hours / Fit selection).
 - Time axis on top (11 px mono), strong hour lines, faint half-hour lines,
   red "now" line with a time badge on the axis.
+  Choose time-label spacing from both the visible duration and canvas width.
+  Keep the now badge in a second ruler row so it does not cover tick labels.
 - Track label column 132 px: name (13 px, 600) + one meta line (11 px):
   "5h 03m tagged", "9h 17m active", "6 apps · 34 switches", "14 windows".
 - Tracks, separated by 1 px lines, each with generous vertical space:
@@ -163,11 +167,16 @@ relocate these controls instead of restyling them:
 - Sections: General, Tracking, Privacy, Data & import, Status & permissions,
   About. Each section is one card of rows: label + one-line explanation on the
   left, control on the right.
+- General: persist the theme choice, remember the window size, and provide a
+  visible Keyboard shortcuts button. Date labels in Day/Week open a compact
+  YYYY-MM-DD jump dialog; Today and arrow navigation remain available.
 - Tracking: start with the computer, away threshold, ask after breaks,
   "Don't track for" presets, repeat-last shortcut, recording schedule.
 - Privacy: never record (chips), hide window titles (chips), delete range.
 - Data & import: data folder, backups, ActivityWatch import (history,
   categories), export (archive, CSV, AW categories).
+  Offer Open data folder and Copy path for the active folder, distinguishing a
+  different folder selected for the next launch.
 - Status: one row per backend with a status dot and a fix-it link.
 
 ### Tray and dialogs

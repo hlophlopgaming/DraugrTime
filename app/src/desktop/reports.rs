@@ -483,13 +483,10 @@ impl canvas::Program<Message> for WeekCanvas<'_> {
                         .with_width(design::HAIRLINE),
                 );
             }
-            let step = if bounds.width / ((last - first) / 2.0)
-                < design::WEEK_AXIS_LABEL + design::CONTROL_GAP as f32
-            {
-                4
-            } else {
-                2
-            };
+            let step = timeline::hour_label_step(
+                bounds.width * design::HOUR_TICK_MIN / design::TIME_TICK_MIN,
+                last - first,
+            );
             for hour in (first as u32..=last as u32).step_by(step) {
                 frame.fill_text(Text {
                     content: format!("{hour:02}:00"),

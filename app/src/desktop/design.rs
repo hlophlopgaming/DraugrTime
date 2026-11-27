@@ -27,9 +27,20 @@ pub const NARROW_BODY_HEIGHT: f32 = 540.0;
 pub const NARROW_MAIN_HEIGHT: f32 = 880.0;
 pub const LOGO: f32 = 36.0;
 pub const TARGET: f32 = 52.0;
+pub const WINDOW_DEFAULT: iced::Size = iced::Size::new(1280.0, 820.0);
+pub const WINDOW_MIN: iced::Size = iced::Size::new(480.0, 600.0);
+pub const CONTENT_MIN: f32 = 600.0;
+pub const LEGACY_BREAKPOINT: f32 = 760.0;
+pub const TIME_TICK_MIN: f32 = 54.0;
+pub const HOUR_TICK_MIN: f32 = 26.0;
+pub const NOW_BADGE_Y: f32 = 25.0;
+pub const NOW_BADGE_HEIGHT: f32 = 18.0;
 
 pub fn narrow(width: f32) -> bool {
-    width < 760.0
+    let rail = RAIL.max(
+        navigation_metrics(super::localization::current()).item_width + 2.0 * RAIL_INSET as f32,
+    );
+    width < rail + PANEL + 2.0 * PADDING as f32 + CONTENT_MIN
 }
 
 fn navigation_label(label: &str) -> iced::advanced::graphics::text::Paragraph {
@@ -542,9 +553,10 @@ mod tests {
     }
 
     #[test]
-    fn narrow_layout_changes_at_the_spec_boundary() {
+    fn narrow_layout_keeps_useful_space_between_rail_and_details() {
         assert!(narrow(759.0));
-        assert!(!narrow(760.0));
+        assert!(narrow(760.0));
+        assert!(narrow(900.0));
         assert!(!narrow(1280.0));
     }
 
