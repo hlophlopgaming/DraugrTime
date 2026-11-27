@@ -20,7 +20,25 @@ fn wheel_zoom_factor(delta: mouse::ScrollDelta) -> f64 {
     0.9_f64.powf(steps.clamp(-10.0, 10.0))
 }
 
-pub const RULER: f32 = 32.0;
+pub const RULER: f32 = 48.0;
+
+/// Keep five-character time labels apart, including at intermediate window sizes.
+pub(super) fn tick_interval(span: i64, width: f32) -> i64 {
+    [
+        60_000, 300_000, 900_000, 1_800_000, 3_600_000, 7_200_000, 10_800_000, 21_600_000,
+        43_200_000, 86_400_000,
+    ]
+    .into_iter()
+    .find(|tick| width * *tick as f32 / span.max(1) as f32 >= super::design::TIME_TICK_MIN)
+    .unwrap_or(86_400_000)
+}
+
+pub(super) fn hour_label_step(width: f32, hours: f32) -> usize {
+    [1, 2, 3, 4, 6, 12, 24]
+        .into_iter()
+        .find(|step| width / hours.max(1.0) * *step as f32 >= super::design::HOUR_TICK_MIN)
+        .unwrap_or(24)
+}
 #[derive(Default)]
 pub struct PaintStats {
     pub frames: AtomicUsize,
@@ -339,17 +357,7 @@ impl canvas::Program<Message> for Timeline<'_> {
         };
         let grid = self.grid_cache.draw(renderer, bounds.size(), |frame| {
             let span = self.view.duration();
-            let tick = if span > 12 * 3_600_000 {
-                2 * 3_600_000
-            } else if span > 4 * 3_600_000 {
-                3_600_000
-            } else if span > 3_600_000 {
-                30 * 60_000
-            } else if span > 15 * 60_000 {
-                5 * 60_000
-            } else {
-                60_000
-            };
+            let tick = tick_interval(span, bounds.width);
             let mut ts = self.view.start.div_euclid(tick) * tick;
             while ts < self.view.end {
                 if ts >= self.view.start {
@@ -633,10 +641,14 @@ impl canvas::Program<Message> for Timeline<'_> {
                 p.danger,
             );
             let badge = (left - 36.0).clamp(0.0, (bounds.width - 40.0).max(0.0));
-            overlay.fill_rectangle(Point::new(badge, 3.0), Size::new(40.0, 18.0), p.danger);
+            overlay.fill_rectangle(
+                Point::new(badge, super::design::NOW_BADGE_Y),
+                Size::new(40.0, super::design::NOW_BADGE_HEIGHT),
+                p.danger,
+            );
             overlay.fill_text(Text {
                 content: model::time_label(now),
-                position: Point::new(badge + 3.0, 5.0),
+                position: Point::new(badge + 3.0, super::design::NOW_BADGE_Y + 2.0),
                 font: super::design::MONO,
                 size: 11.0.into(),
                 color: p.accent_ink,
@@ -800,22 +812,25 @@ mod tests {
             stats: &PaintStats::default(),
         };
         let mut renderer = Renderer::new(super::super::design::UI, 13.0.into());
+        let height = RULER + super::super::design::TRACK_HEAD + 2.0 * super::super::design::LANE;
         for geometry in program.draw(
             &Interaction::default(),
             &renderer,
             &Theme::Dark,
-            Rectangle::with_size(Size::new(100.0, 116.0)),
+            Rectangle::with_size(Size::new(100.0, height)),
             mouse::Cursor::Unavailable,
         ) {
             renderer.draw_geometry(geometry);
         }
-        let pixels = renderer.screenshot(Size::new(100, 116), 1.0, Color::BLACK);
+        let pixels = renderer.screenshot(Size::new(100, height as u32), 1.0, Color::BLACK);
+        let first_y = (RULER + super::super::design::TRACK_HEAD + 3.0) as usize;
+        let second_y = first_y + super::super::design::LANE as usize;
         assert!(
-            pixels[(83 * 100) * 4] > 100,
+            pixels[(first_y * 100) * 4] > 100,
             "first application's subpixel bar must remain visible"
         );
         assert!(
-            pixels[(101 * 100) * 4 + 1] > 100,
+            pixels[(second_y * 100) * 4 + 1] > 100,
             "second application's subpixel bar must remain visible in its own lane"
         );
     }

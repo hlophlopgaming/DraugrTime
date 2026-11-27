@@ -298,7 +298,7 @@ impl State {
                 last.year()
             )
         };
-        let nav = row![
+        let mut nav = row![
             button(text("‹"))
                 .on_press(Message::Shift(-1))
                 .style(design::ghost)
@@ -314,7 +314,7 @@ impl State {
                     range
                 }
             ))
-            .on_press(Message::Today)
+            .on_press(Message::Qol(qol::Edit::OpenDate))
             .style(design::ghost),
             button(text("›"))
                 .on_press(Message::Shift(1))
@@ -322,6 +322,17 @@ impl State {
                 .width(design::DENSE_TARGET)
         ]
         .align_y(Alignment::Center);
+        if !data
+            .days
+            .iter()
+            .any(|day| day.date == Local::now().date_naive())
+        {
+            nav = nav.push(
+                button(text(tr("Today")))
+                    .on_press(Message::Today)
+                    .style(design::ghost),
+            );
+        }
         let mut dates = column![space::vertical().height(WEEK_RULER)];
         let mut totals = column![space::vertical().height(WEEK_RULER)];
         let now = draugr_time_daemon::now_ms();

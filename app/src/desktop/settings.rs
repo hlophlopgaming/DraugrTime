@@ -443,7 +443,11 @@ impl State {
                         ))
                         .size(design::BODY),
                     )
-                    .push(languages.wrap());
+                    .push(languages.wrap())
+                    .push(
+                        button(text(tr("Keyboard shortcuts")))
+                            .on_press(Message::Qol(qol::Edit::Help)),
+                    );
             }
             "Tracking" => {
                 body = body.push(setting("Start Draugr Time when I log in", "Starts activity tracking in the tray. Turn this off here to remove it from system startup.", management::switch(self.autostart_enabled, Message::AutoStart(!self.autostart_enabled), p)));
@@ -570,7 +574,12 @@ impl State {
             }
             "Data & import" => {
                 body = body.push(text(tr("Data folder")).size(design::BODY)).push(text(draugr_time_daemon::paths::data_dir().map(|p| p.display().to_string()).unwrap_or_else(|e| e.to_string())).size(design::META))
-                    .push(button(text(tr("Choose folder"))).on_press(Message::Folder))
+                    .push(row![
+                        button(text(tr("Choose folder"))).on_press(Message::Folder),
+                        button(text(tr("Open data folder"))).on_press(Message::Qol(qol::Edit::OpenFolder)),
+                        button(text(tr("Copy path"))).on_press(Message::Qol(qol::Edit::CopyFolder)),
+                    ].spacing(design::CONTROL_GAP).wrap())
+                    .extend((!self.qol.notice.is_empty()).then(|| text(&self.qol.notice).size(design::META).into()))
                     .push(text(self.pending_dir.as_ref().map(|path| localized("Next launch: {path}. Existing history stays in the old folder.", &[("path", path.clone())])).unwrap_or_else(|| tr("The folder change takes effect after restarting Draugr Time."))).size(design::META))
                     .push(button(text(tr("Import ActivityWatch / Draugr JSON"))).on_press(Message::Report(reports::Edit::Import)))
                     .push(text(tr("Import adds history atomically; overlapping event buckets are rejected. JSON export is available in Reports.")).size(design::META))

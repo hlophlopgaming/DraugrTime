@@ -20,6 +20,7 @@ use localization::{message as localized, tr, LocaleProvider};
 mod memory;
 mod model;
 mod motion;
+mod qol;
 mod runtime;
 mod single_instance;
 mod startup;
@@ -106,6 +107,7 @@ fn decode_icons(
 
 #[derive(Clone, Debug)]
 pub enum Message {
+    Qol(qol::Edit),
     Settings(settings::Edit),
     Backup(backups::Edit),
     Edit(tagging::Edit),
@@ -170,6 +172,7 @@ pub(super) enum AppIcon {
     Svg(svg::Handle),
 }
 struct State {
+    qol: qol::Ui,
     settings_ui: settings::Ui,
     backup_ui: backups::Ui,
     report_ui: reports::Ui,
@@ -267,6 +270,15 @@ impl State {
         let runtime_test =
             onboarding_test || lifecycle || args.iter().any(|arg| arg == "--runtime-test");
         let benchmark = args.iter().any(|arg| arg == "--benchmark");
+        let (preferences, preference_error) = if cfg!(test) || smoke || runtime_test || benchmark {
+            (qol::Preferences::default(), String::new())
+        } else {
+            match qol::path().and_then(|path| qol::Preferences::load(&path)) {
+                Ok(preferences) => (preferences, String::new()),
+                Err(error) => (qol::Preferences::default(), error),
+            }
+        };
+        let preference = preferences.theme;
         let date = Local::now().date_naive();
         let day = model::day_bounds(date);
         let stats = Arc::new(timeline::PaintStats::default());
@@ -295,6 +307,10 @@ impl State {
             }
         };
         let mut state = Self {
+            qol: qol::Ui {
+                preferences,
+                ..Default::default()
+            },
             settings_ui: settings::Ui::load(),
             backup_ui: backups::Ui::default(),
             report_ui: reports::Ui::default(),
@@ -351,13 +367,17 @@ impl State {
             block_focus: false,
             tag_toast: None,
             range_mode: 1,
-            theme: native_theme(benchmark && args.iter().any(|arg| arg == "--dark")),
+            theme: native_theme(if benchmark {
+                args.iter().any(|arg| arg == "--dark")
+            } else {
+                preference.is_dark(iced::theme::Mode::None)
+            }),
             theme_preference: if benchmark && args.iter().any(|arg| arg == "--dark") {
                 appearance::Preference::Dark
             } else if benchmark && args.iter().any(|arg| arg == "--light") {
                 appearance::Preference::Light
             } else {
-                appearance::Preference::System
+                preference
             },
             system_theme: iced::theme::Mode::None,
             grid_cache: widget::canvas::Cache::new(),
@@ -370,7 +390,7 @@ impl State {
             runtime: None,
             tray,
             status: draugr_time_daemon::Status::default(),
-            error: String::new(),
+            error: preference_error,
             loading: false,
             load_generation: 0,
             load_cursor: runtime::LoadCursor::default(),
@@ -468,15 +488,12 @@ impl State {
             self.rebuild();
         }
         let (id, task) = window::open(window::Settings {
-            size: iced::Size::new(
-                if self.benchmark && std::env::args().any(|arg| arg == "--narrow") {
-                    640.0
-                } else {
-                    1280.0
-                },
-                820.0,
-            ),
-            min_size: Some(iced::Size::new(480.0, 600.0)),
+            size: if self.benchmark && std::env::args().any(|arg| arg == "--narrow") {
+                iced::Size::new(640.0, 820.0)
+            } else {
+                self.qol.preferences.size.unwrap_or(design::WINDOW_DEFAULT)
+            },
+            min_size: Some(design::WINDOW_MIN),
             visible,
             exit_on_close_request: false,
             icon: crate::branding::window_icon().ok(),
@@ -577,7 +594,7 @@ impl State {
             model::union_duration(&ranges(0, Some("untagged")), self.day),
         ];
         self.metrics[3] = self.day_gaps().iter().map(|r| r.duration()).sum();
-        let search = self.search.to_lowercase();
+        let search = self.search.trim().to_lowercase();
         let mut previous = std::mem::take(&mut self.search_text);
         if !search.trim().is_empty() {
             for segment in self.all.iter().flat_map(|track| &track.segments) {
@@ -642,7 +659,7 @@ impl State {
         for row in &mut self.rows {
             row.share = row.duration as f64 / observed as f64 * 100.0;
         }
-        let search = self.summary_search.to_lowercase();
+        let search = self.summary_search.trim().to_lowercase();
         if !search.trim().is_empty() {
             let matches: std::collections::HashSet<_> = self.all[3]
                 .segments
@@ -726,6 +743,7 @@ impl State {
                 iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. })
                     if status == iced::event::Status::Ignored
                         || key == keyboard::Key::Named(keyboard::key::Named::F6)
+                        || key == keyboard::Key::Named(keyboard::key::Named::Escape)
                         || (modifiers.command()
                             && matches!(&key,keyboard::Key::Character(c)if c.eq_ignore_ascii_case("f"))) =>
                 {
@@ -747,6 +765,10 @@ impl State {
                 window::Event::Unfocused => Some(Message::MotionUnfocused),
                 _ => None,
             }));
+            subscriptions.push(
+                window::resize_events()
+                    .map(|(id, size)| Message::Qol(qol::Edit::Resized(id, size))),
+            );
             use motion::MotionPreference as _;
             subscriptions.push(
                 motion::SystemMotionPreference
@@ -779,6 +801,7 @@ impl State {
     }
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Qol(edit) => return self.edit_qol(edit),
             Message::MotionFrame(now) => {
                 if self.motion.active(motion::Key::Track(2))
                     || self.motion.active(motion::Key::Track(3))
@@ -1136,9 +1159,14 @@ impl State {
                 if self.autostart_question() {
                     self.animate(motion::Key::Dialog, 0.0, 1.0);
                 }
-                return motion::read_preference();
+                return Task::batch([
+                    motion::read_preference(),
+                    window::monitor_size(id)
+                        .map(move |monitor| Message::Qol(qol::Edit::FitWindow(id, monitor))),
+                ]);
             }
             Message::Close(id) => {
+                self.persist_ui();
                 if self.tray.is_some() {
                     self.window = None;
                     self.release_day();
@@ -1166,7 +1194,7 @@ impl State {
                 };
                 if let Some(date) = date {
                     self.change_date(date);
-                    if self.screen == "Week" {
+                    if matches!(self.screen, "Week" | "Overview") {
                         return self.edit_report(reports::Edit::Refresh);
                     }
                 }
@@ -1174,7 +1202,7 @@ impl State {
             Message::CloseShortcuts => self.shortcuts_open = false,
             Message::Today => {
                 self.change_date(Local::now().date_naive());
-                if self.screen == "Week" {
+                if matches!(self.screen, "Week" | "Overview") {
                     return self.edit_report(reports::Edit::Refresh);
                 }
             }
@@ -1376,6 +1404,7 @@ impl State {
             Message::Theme => {
                 self.theme_preference = self.theme_preference.next();
                 self.apply_theme();
+                self.persist_ui();
             }
             #[cfg(not(target_os = "linux"))]
             Message::SystemThemeChanged(mode) => {
@@ -1458,7 +1487,10 @@ impl State {
                     }
                 }
             }
-            Message::Quit => return iced::exit(),
+            Message::Quit => {
+                self.persist_ui();
+                return iced::exit();
+            }
             Message::Folder => {
                 return Task::perform(
                     async {
@@ -1486,6 +1518,28 @@ impl State {
             }
             Message::Key(key, modifiers) => {
                 use keyboard::key::Named;
+                if self.qol.date.is_some() || self.qol.pending.is_some() {
+                    return match key {
+                        keyboard::Key::Named(Named::Escape) => {
+                            self.edit_qol(if self.qol.date.is_some() {
+                                qol::Edit::CancelDate
+                            } else {
+                                qol::Edit::Stay
+                            })
+                        }
+                        keyboard::Key::Named(Named::Enter) if self.qol.date.is_some() => {
+                            self.edit_qol(qol::Edit::GoDate)
+                        }
+                        keyboard::Key::Named(Named::Tab) => {
+                            if modifiers.shift() {
+                                widget::operation::focus_previous()
+                            } else {
+                                widget::operation::focus_next()
+                            }
+                        }
+                        _ => Task::none(),
+                    };
+                }
                 if self.autostart_question() || self.motion.active(motion::Key::Dialog) {
                     return if key == keyboard::Key::Named(Named::Tab) {
                         if modifiers.shift() {
@@ -1557,7 +1611,7 @@ impl State {
                     return widget::operation::focus(if self.rail_focus.is_some() {
                         "rail"
                     } else {
-                        "activity-search"
+                        qol::search_target(self.screen).unwrap_or("rail")
                     });
                 }
                 if self.editor.is_none() {
@@ -1582,12 +1636,7 @@ impl State {
                             }
                             keyboard::Key::Named(Named::Escape | Named::Tab) => {
                                 self.rail_focus = None;
-                                self.search_open = true;
-                                return widget::operation::focus(if self.screen == "Day" {
-                                    "day-filter"
-                                } else {
-                                    "activity-search"
-                                });
+                                return self.focus_search();
                             }
                             _ => {}
                         }
@@ -1661,20 +1710,23 @@ impl State {
                         _ => Task::none(),
                     };
                 }
-                if key == keyboard::Key::Named(keyboard::key::Named::Enter) {
+                if self.screen == "Day" && key == keyboard::Key::Named(keyboard::key::Named::Enter)
+                {
                     return self.edit(tagging::Edit::Open);
                 }
                 if modifiers.command()
                     && matches!(&key,keyboard::Key::Character(c)if c.eq_ignore_ascii_case("f"))
                 {
-                    self.search_open = true;
-                    return widget::operation::focus(if self.screen == "Day" {
-                        "day-filter"
-                    } else if self.screen == "Tags" {
-                        "manager-tag-search"
-                    } else {
-                        "activity-search"
-                    });
+                    return self.focus_search();
+                }
+                if key == keyboard::Key::Named(Named::Escape) && self.clear_search() {
+                    return Task::none();
+                }
+                if modifiers.command() || modifiers.alt() || modifiers.control() {
+                    return Task::none();
+                }
+                if !matches!(self.screen, "Day" | "Week" | "Overview") {
+                    return Task::none();
                 }
                 let message = match key {
                     keyboard::Key::Named(keyboard::key::Named::ArrowLeft) => {
@@ -1688,8 +1740,8 @@ impl State {
                     }
                     keyboard::Key::Character(c) => match c.as_str() {
                         "t" | "T" => Some(Message::Today),
-                        "+" | "=" => Some(Message::Zoom(0.9, None)),
-                        "-" => Some(Message::Zoom(1.0 / 0.9, None)),
+                        "+" | "=" if self.screen == "Day" => Some(Message::Zoom(0.9, None)),
+                        "-" if self.screen == "Day" => Some(Message::Zoom(1.0 / 0.9, None)),
                         _ => None,
                     },
                     _ => None,
@@ -1773,6 +1825,22 @@ impl State {
         widget::responsive(move |size| self.view_sized(size.width)).into()
     }
     fn view_sized(&self, width: f32) -> Element<'_, Message> {
+        if let Some(dialog) = self.qol_dialog() {
+            let p = design::Palette::new(self.theme.palette().background.r < 0.5);
+            return container(
+                scrollable(dialog)
+                    .height(Length::Shrink)
+                    .style(design::scrollbars),
+            )
+            .padding(design::PADDING)
+            .center(Length::Fill)
+            .style(move |_| container::Style {
+                background: Some(p.bg.into()),
+                text_color: Some(p.text),
+                ..Default::default()
+            })
+            .into();
+        }
         if !self.settings_ui.preferences.onboarded
             && !self.fixture
             && (!self.runtime_test || self.onboarding_test)
@@ -1807,17 +1875,23 @@ impl State {
         }
         if self.shortcuts_open {
             let p = design::Palette::new(self.theme.palette().background.r < 0.5);
-            return container(self.shortcuts_dialog())
-                .padding(design::PADDING)
-                .center(Length::Fill)
-                .style(move |_| container::Style {
-                    background: Some(p.bg.into()),
-                    text_color: Some(p.text),
-                    ..Default::default()
-                })
-                .into();
+            return container(
+                scrollable(self.shortcuts_dialog())
+                    .height(Length::Shrink)
+                    .style(design::scrollbars),
+            )
+            .padding(design::PADDING)
+            .center(Length::Fill)
+            .style(move |_| container::Style {
+                background: Some(p.bg.into()),
+                text_color: Some(p.text),
+                ..Default::default()
+            })
+            .into();
         }
-        let narrow = design::narrow(width);
+        let narrow = design::narrow(width)
+            && (matches!(self.screen, "Day" | "Week" | "Tags" | "Rules" | "Settings")
+                || width < design::LEGACY_BREAKPOINT);
         let navigation = design::navigation_metrics(localization::current());
         let rail_item = navigation.item_width;
         let rail_width = design::RAIL.max(rail_item + 2.0 * design::RAIL_INSET as f32);
@@ -3016,3 +3090,6 @@ mod overview_icon_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod qol_tests;

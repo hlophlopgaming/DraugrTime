@@ -1138,3 +1138,30 @@ as the clock catches up, avoiding destructive recovery for scheduling races.
 Settings exposes both general tracker errors and the backup location; the latter
 is retained in live status for this process, while the backup file persists across
 restarts. A failed recovery remains a visible error and can be retried.
+
+## 2026-11-27 — M12 audit fixes and desktop conveniences
+
+The approved UI/QoL audit is one M12 follow-up. Derive the stacked layout from
+measured navigation width plus the existing details panel and a 600 px minimum
+main area. Base timeline tick density on actual canvas width; put the current-time
+badge below ordinary ticks. This fixes intermediate window sizes without a new
+screen or renderer, and retains the existing canvas caches.
+
+Keep theme and logical window size in an atomically replaced `ui.json` beside
+`language.json`, independent of the history folder. Read it on normal launches
+only; diagnostics and unit tests do not touch personal UI preferences. Resize
+messages update memory; close/quit or an explicit theme change writes preferences.
+There is no resize polling/debounce timer. Ask Iced for the current monitor after
+opening, fit the size with decoration/panel headroom, and leave placement to the
+window manager (Wayland has no portable position restoration).
+
+Guard replacement of dirty tag/rule drafts at their shared edit entry points,
+including suggested rules. Save/Discard/Stay preserves the requested target;
+validation failures retain both draft and pending action. Saving a rule that asks
+to apply to history stays in the existing history confirmation before proceeding.
+Screen navigation and hide-to-tray retain drafts as before.
+
+Reuse native Iced fields/buttons for date jumps, contextual search, visible help
+and folder actions. Open folders with argument-separated OS commands on a blocking
+worker; do not pass paths through a shell. All new copy has eight translations.
+No dependencies, SQL schema changes, network services or idle timers are added.

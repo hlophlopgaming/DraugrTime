@@ -263,6 +263,9 @@ impl State {
         )
     }
     pub(super) fn edit_management(&mut self, event: Edit) -> Task<Message> {
+        if self.guard_tag(&event) {
+            return Task::none();
+        }
         match event {
             Edit::Loaded(g, result) => {
                 if g != self.management.generation || !matches!(self.screen, "Tags" | "Rules") {
@@ -281,11 +284,9 @@ impl State {
                                 self.management.tag = None;
                             }
                         }
-                        if let Some(r) = data
-                            .rules
-                            .iter()
-                            .find(|r| Some(r.id) == self.rule_editor.id)
-                        {
+                        if let Some(r) = data.rules.iter().find(|r| {
+                            Some(r.id) == self.rule_editor.id && !self.rule_editor.modified
+                        }) {
                             self.rule_editor.priority = r.priority.to_string();
                         }
                         if let Some(draft) = self.management.tag.as_mut().filter(|t| !t.dirty) {
@@ -776,6 +777,13 @@ impl State {
                         Length::Fixed(design::MANAGER_SEARCH)
                     }),
             );
+            if !ui.search.is_empty() {
+                actions = actions.push(
+                    button(text(tr("Clear")))
+                        .on_press(Message::Qol(qol::Edit::ClearSearch))
+                        .style(design::ghost),
+                );
+            }
         } else {
             actions = actions
                 .push(tooltip(
@@ -1757,6 +1765,7 @@ impl State {
                 .size(design::LABEL)
                 .color(p.text3),
             text_input(&tr("Regular expression"), &e.pattern)
+                .id("rule-pattern")
                 .font(design::MONO)
                 .on_input(|s| Message::Rule(rules::Edit::Pattern(s)))
                 .style(move |theme, status| {
